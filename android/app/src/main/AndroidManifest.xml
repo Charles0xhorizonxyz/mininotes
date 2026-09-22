@@ -1,0 +1,58 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The two nodes this phone might have. Core carries the notebook's business; the Maxima transport
+         carries the post, because Core's build has no Maxima in it at all. -->
+    <queries>
+        <package android:name="org.minimarex.minimacore" />
+        <package android:name="com.eurobuddha.maxima.app" />
+        <!-- And the two kinds of address a note can hold, so the phone will admit to having something
+             that opens them. Since Android 11 an app is told about nothing it has not asked about. -->
+        <intent><action android:name="android.intent.action.SENDTO" /><data android:scheme="mailto" /></intent>
+        <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="https" /></intent>
+        <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="http" /></intent>
+    </queries>
+    <!-- Signature level at the transport's end: asking for it grants nothing unless this app is signed
+         with the same key. An unsigned build is simply refused at the door. -->
+    <uses-permission android:name="com.eurobuddha.maxima.app.permission.USE_MAXIMA" />
+    <!-- Only to read a pairing code off another screen: nothing is recorded and no frame is kept. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Two things use the network, and nothing else does. This phone's own Maxima node, which carries what
+         you share - sealed for the device it is going to before it leaves, so a relay handles bytes it
+         cannot read. And the update check, which is one line of text read from the repository: once a day
+         when the pad is opened, which About can switch off, and whenever somebody taps for it. Nothing is
+         sent with it. Nothing that is not shared ever leaves the phone. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- To go on listening for notes while the pad is closed, which Android allows on condition that it
+         says so for as long as it lasts. Only while there is a device paired to hear from, and it can be
+         switched off in Profile or from the notification itself. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
+    <!-- To say that a note arrived. Asked for once; refusing it changes nothing but that. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <application android:label="@string/app_name" android:icon="@drawable/ic_note" android:theme="@style/AppTheme" android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/data_extraction_rules" android:supportsRtl="true">
+        <!-- One pad, never two. A second copy of the screen would be a second copy of the page being written
+             on, each saving over the other; anything that asks for the pad is handed the one there is. -->
+        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask" android:windowSoftInputMode="stateUnchanged|adjustResize">
+            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+            <!-- A pairing code, read by the phone's own camera rather than by the scanner in here. The code is
+                 dressed as a link this answers to, so the camera offers to open it; what it says is still
+                 shown and still has to be accepted. See Pairing.LINK. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="mininotes" android:host="pair" />
+            </intent-filter>
+        </activity>
+        <!-- One kept file, lent to whatever app can open it: never exported, read only, one look at a time. -->
+        <provider android:name=".Lending" android:authorities="org.mininotes.android.files"
+            android:exported="false" android:grantUriPermissions="true" />
+        <!-- The node kept up while the pad is closed. Text from one device to another is what the type is
+             for, and it is the one kind that is not cut off after six hours. -->
+        <service android:name=".Listening" android:exported="false"
+            android:foregroundServiceType="remoteMessaging" />
+        <!-- Where the transport addresses its replies. Exported because it names this class, and it holds
+             nothing: the live listener is registered while a question is outstanding. -->
+        <receiver android:name=".MaximaConnection$Answers" android:exported="true" />
+    </application>
+</manifest>

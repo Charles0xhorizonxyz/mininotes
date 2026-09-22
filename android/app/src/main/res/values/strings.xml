@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Mininotes</string>
+    <string name="save_failed">Not saved · tap to retry</string>
+</resources>

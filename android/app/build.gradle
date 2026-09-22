@@ -1,0 +1,55 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'org.mininotes.android'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'org.mininotes.android'
+        minSdk 28
+        targetSdk 35
+        versionCode 107
+        versionName '0.0.107'
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+
+    // The Maxima transport's IPC is signature-gated: it answers an app signed with its own key and nobody
+    // else. So a build that is to ask it anything has to be signed with that key. Where to find the key and
+    // what it is called are read from an untracked file, never from here - a key checked into a repository
+    // is a key that has been given away.
+    //
+    // Put this in android/keystore.properties, which .gitignore already keeps out:
+    //     storeFile=/path/to/family-release.jks
+    //     storePassword=...
+    //     keyAlias=...
+    //     keyPassword=...
+    // Then: ./gradlew assembleRelease  -> a signed APK the transport will talk to.
+    // Without that file the release build is unsigned exactly as it was, and nothing here fails.
+    signingConfigs {
+        family {
+            def where=rootProject.file('keystore.properties')
+            if(where.exists()) {
+                def said=new Properties()
+                where.withInputStream { said.load(it) }
+                storeFile file(said.getProperty('storeFile'))
+                storePassword said.getProperty('storePassword')
+                keyAlias said.getProperty('keyAlias')
+                keyPassword said.getProperty('keyPassword')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            if(rootProject.file('keystore.properties').exists())signingConfig signingConfigs.family
+        }
+    }
+}
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'com.google.zxing:core:3.5.3'
+    // Reading and drawing QR codes. Plain Java, Apache-2.0, no AndroidX: a pairing line is 350 characters,
+    // which is a thing to point a camera at rather than a thing to type.
+    implementation 'com.google.zxing:core:3.5.3'
+    // The Maxima transport itself, vendored under maxima-core/. This app does not ask another app for an
+    // address any more: it is the node, the way Parlons is, so the address is simply something it knows.
+    implementation project(':maxima-core')
+}

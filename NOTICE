@@ -1,0 +1,45 @@
+Mininotes
+Copyright 2026 Mininotes contributors
+
+Licensed under the terms in LICENSE: the Apache License 2.0, with the Commons
+Clause condition and an additional paid-product condition. The software is free
+to use, change and pass on, and may not be sold or included in anything sold.
+Any copy you pass on must carry this notice and those conditions.
+
+app/mds.js is the unmodified Minima MDS JavaScript library, Apache-2.0. Its own
+Apache-2.0 terms apply to it and are not narrowed by this project's conditions.
+See app/THIRD-PARTY.txt, app/MINIMA-LICENSE.txt and docs/upstream.txt.
+
+The native Core IPC adapter implements the contract published by
+spartacusrex-minima/minima-core-android, Apache-2.0.
+Source: https://github.com/spartacusrex-minima/minima-core-android
+Pinned source commit: docs/research/core-upstream-commit.txt.
+No minimaapi AAR or Minima node binary is bundled in the native application.
+
+ZXing core 3.5.3 (com.google.zxing:core) is Apache-2.0, used to draw and read
+QR codes. It is a dependency, not a fork, and keeps its own terms.
+
+The generated Gradle wrapper is an Apache-2.0 component of Gradle.
+JUnit 4.13.2 is an EPL-1.0 test-only dependency.
+The JavaScript build/test tools retain their respective dependency licenses.
+
+android/maxima-core/ is the shared core of the Maxima transport, vendored from
+https://github.com/eurobuddha/maxima at commit 6e001754428623b891bc582b05fe505c1f96f37c
+(its core/src/main tree, unmodified: 88 files, checked byte for byte against
+that commit on 2026-09-22). It is what makes this app a Maxima node rather than
+an app asking another app to be one for it. Java 11, no runtime dependencies.
+
+That repository declares no licence, so its author was asked, on 2026-09-21,
+whether Mininotes may be published with this tree inside it and credited to
+them. They answered on 2026-09-22, in a private message: "go for it" (typed
+"fo for it"), "with my blessing", "open source is free although I do appreciate
+you asking". So the tree is redistributed here with its author's permission and
+credit, and nothing more is claimed for it: it is not under this project's
+LICENSE, the conditions in that LICENSE are not put on it, and anybody who wants
+the Maxima transport for their own work should take it from its own repository
+and its author rather than from here. The same credit is beside the code, in
+android/maxima-core/NOTICE. See docs/MAXIMA-TRANSPORT.md.
+
+SHA3-256 is not vendored: Android provides none at any version, and rather than
+take a cryptography library for one function, org.mininotes.android.Sha3 is an
+implementation of Keccak-f[1600] checked against the published NIST answers.

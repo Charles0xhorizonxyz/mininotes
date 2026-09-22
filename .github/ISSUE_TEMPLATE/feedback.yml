@@ -1,0 +1,74 @@
+name: Feedback
+description: Anything about the app — broken, confusing, missing, or an idea.
+title: "Feedback"
+labels: [feedback]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is public. Anybody can read it, now and later.
+
+        Say what the app did, not who you are: no names, no addresses, nothing
+        off a note you have written. If you got here from the app's ⋮ → Feedback,
+        the boxes below are already filled in — read them over before you post.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What sort of thing
+      options:
+        - Something is broken
+        - Something is confusing
+        - An idea
+        - Something is missing
+    validations: { required: true }
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the app
+      options:
+        - Writing a note
+        - Collections and books
+        - Sharing and syncing
+        - Attachments
+        - Backup and restore
+        - Text size and colour
+        - The node and addresses
+        - Something else
+    validations: { required: true }
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What you want to say
+      description: |
+        For something broken: what you did, what happened, and what you expected
+        instead. For anything else: what you are trying to get done.
+    validations: { required: true }
+
+  - type: input
+    id: about
+    attributes:
+      label: Version and phone
+      description: "⋮ → About shows the version. The app fills this in for you."
+      placeholder: Mininotes 0.0.58 · Android 16 · Pixel 7
+    validations: { required: true }
+
+  - type: input
+    id: minima
+    attributes:
+      label: A Minima address, if you like
+      description: |
+        Optional, and public like the rest. There is no fund and nothing is
+        promised: it is here so that if the people who improved this are ever
+        paid, there is a list of them.
+      placeholder: Mx…
+
+  - type: checkboxes
+    id: personal
+    attributes:
+      label: Before you post
+      options:
+        - label: There is nothing personal in what I have written above.
+          required: true

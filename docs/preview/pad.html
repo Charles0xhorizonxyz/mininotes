@@ -1,0 +1,1767 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mininotes Pad</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;450;600&display=swap">
+<style>
+  body{margin:0}
+
+  /* Harness tokens follow the viewer's theme. The phone screen below deliberately does not:
+     it depicts an Android app whose palette is the reader's own choice, stepped inside the phone, so it
+     keeps whichever paper is in use in both themes. */
+  :root{
+    --ground:#E4E1D8; --panel:#F3F1EB; --edge:#CFCBBE;
+    --text:#26282A; --dim:#5E6266; --faint:#878B8E; --accent:#2F5A49;
+    --shadow:0 20px 44px rgba(31,33,30,.22);
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ground:#1C1E1C; --panel:#262926; --edge:#3A3E3A;
+      --text:#E6E5DE; --dim:#A8ACA6; --faint:#82867F; --accent:#8FBCA6;
+      --shadow:0 24px 56px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#1C1E1C; --panel:#262926; --edge:#3A3E3A;
+    --text:#E6E5DE; --dim:#A8ACA6; --faint:#82867F; --accent:#8FBCA6;
+    --shadow:0 24px 56px rgba(0,0,0,.5);
+  }
+  /* The app's own palette, fixed in both themes and stepped by the paper ladder inside the phone. */
+  :root{
+    --paper:#FBFAF6; --ink:#273A34; --muted:#7C8A84; --rule:#E4DFD1; --card:#F2EFE5; --edge2:#E4DFD1;
+    --green:#285646; --warn:#8C3B2E; --sheet:#FCFCFA;
+    /* The reading ladder sets one size for the whole pad: every word is drawn in proportion to the note's
+       own text, so a name under a tile is never left behind when the writing grows. */
+    --scale:1;
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--ground); color:var(--text);
+    font:16px/1.55 "IBM Plex Sans",-apple-system,Segoe UI,Roboto,sans-serif;
+    padding-block:32px 56px; padding-left:16px; padding-right:16px;
+  }
+  .sheet{max-width:940px; margin:0 auto; display:flex; flex-direction:column; gap:28px}
+  header{display:flex; flex-direction:column; gap:8px; max-width:62ch}
+  .eyebrow{
+    font:500 11px/1 "IBM Plex Mono",ui-monospace,monospace; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--accent);
+  }
+  h1{margin:0; font-size:26px; font-weight:600; letter-spacing:-.015em; text-wrap:balance}
+  header p{margin:0; color:var(--dim)}
+  .stage{display:flex; flex-wrap:wrap; gap:32px; align-items:flex-start}
+
+  /* 393 x 873 dp — the 1080 x 2400 screen the build was tested on, at its own density. */
+  .phone{
+    width:min(393px,100%); aspect-ratio:393/873; flex:0 0 auto; position:relative;
+    border-radius:34px; overflow:hidden; background:var(--paper); color:var(--ink);
+    box-shadow:var(--shadow); display:flex; flex-direction:column;
+    font:calc(17px*var(--scale))/1.5 "Roboto",-apple-system,Segoe UI,sans-serif;
+  }
+  .bar{display:flex; align-items:center; min-height:56px; padding:2px 8px; flex:0 0 auto; gap:2px}
+  .grow{flex:1; min-width:0}
+  .slot{width:48px; height:48px; flex:0 0 auto}
+  .called{flex:1; min-width:0; text-align:center; font-size:calc(17px*var(--scale)); color:var(--muted)}
+  .said{flex:1; min-width:0; text-align:center; font-size:calc(12px*var(--scale)); color:var(--muted)}
+  .tap{
+    min-width:48px; min-height:48px; padding:0 8px; display:flex; align-items:center; justify-content:center;
+    background:none; border:0; font:inherit; color:var(--ink); cursor:pointer; border-radius:24px; flex:0 0 auto;
+  }
+  .tap:hover{background:rgba(39,58,52,.06)}
+  .tap:focus-visible{outline:2px solid var(--ink); outline-offset:-2px}
+  .tap.word{font-size:calc(14px*var(--scale)); color:var(--muted)}
+  .tap.plus{font-size:calc(26px*var(--scale)); line-height:1}
+  .tap.share{font-size:calc(17px*var(--scale)); color:var(--muted)}
+
+  /* The page: ruled to the bottom, and the rules scroll with the writing. The rule pitch is the text's
+     own line height, set together in one place, so a rule never lands anywhere but under a line. */
+  .page{
+    /* The pad keeps going below the last line, so there is always somewhere to write and to scroll. */
+    flex:1; margin:0 20px 12px; padding:2px 0 280px; border:0; outline:0; resize:none; width:auto;
+    font-family:"Roboto",-apple-system,Segoe UI,sans-serif;
+    font-size:var(--size,17px); line-height:var(--lead,26px); color:var(--ink); background:transparent;
+    background-image:repeating-linear-gradient(to bottom,
+      transparent 0 calc(var(--lead,26px) - 1px),var(--rule) calc(var(--lead,26px) - 1px) var(--lead,26px));
+    background-attachment:local;
+  }
+
+  /* The shelves: one quiet line saying where you are, then what this level holds. */
+  .trail{
+    display:flex; align-items:center; padding:0 20px 8px; font-size:11px; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--muted); white-space:nowrap; overflow-x:auto;
+  }
+  .trail button{background:none; border:0; font:inherit; color:inherit; padding:8px 2px; cursor:pointer; border-radius:4px}
+  .trail button:hover{background:rgba(39,58,52,.08)}
+  .trail .now{color:var(--ink); padding:8px 2px}
+  .trail .sep{padding:0 5px}
+  .list{flex:1; overflow-y:auto; padding-bottom:28px}
+  /* A level is a desktop: its things are laid out across it, the way a phone lays out its apps. */
+  .desk{flex:1; overflow-y:auto; padding:4px 12px 28px; display:grid; align-content:start;
+    grid-template-columns:repeat(auto-fill,minmax(calc(112px*var(--scale)),1fr))}
+  .tile{
+    display:flex; flex-direction:column; align-items:center; padding:8px 4px; border:0; background:none;
+    font:inherit; color:var(--ink); cursor:pointer; border-radius:12px; text-align:center;
+  }
+  .tile:hover{background:rgba(39,58,52,.05)}
+  .tile .face{
+    width:100%; aspect-ratio:1; border-radius:18px; border:1px solid var(--rule); background:var(--card);
+    display:flex; flex-direction:column; justify-content:center; gap:6px; padding:14%;
+  }
+  .tile .face.paper{background:var(--paper); justify-content:flex-start; gap:0}
+  .tile .face.place{background:none}
+  .tile .face.add{background:none; border:1px dashed var(--edge2); align-items:center; justify-content:center;
+    color:var(--green); font-size:28px}
+  .tile .pips{display:grid; grid-template-columns:1fr 1fr; gap:6px; width:100%; height:100%}
+  .tile .pips span{border-radius:4px}
+  .tile .pips span.on{background:var(--paper); border:1px solid var(--rule)}
+  .tile .rules{width:100%}
+  .tile .rules i{display:block; height:1px; background:var(--rule); margin-bottom:16%}
+  .tile .rules i:last-child{width:45%}
+  /* The writing, a thing's name and every line of the menu are one size: they are all words you read. */
+  .tile b{display:block; font-weight:400; font-size:calc(17px*var(--scale)); padding-top:6px; line-height:1.25}
+  .tile .marks{display:flex; gap:6px; align-items:center; justify-content:center; padding-top:2px}
+  .tile .waiting{font-size:calc(11px*var(--scale)); color:var(--green); padding:0}
+  .state{font-size:calc(12px*var(--scale)); color:var(--muted); white-space:nowrap}
+  .state.out{color:var(--green)}
+  .tile.lifted{opacity:.35}
+  .tile.onto .face{border:2px solid var(--green)}
+  .tile.place b{color:var(--muted)}
+  /* A name being changed where it is written: the field looks like the name it replaces. */
+  .naming{
+    width:100%; margin-top:6px; padding:0 2px; border:0; border-bottom:2px solid var(--green); background:none;
+    font:calc(17px*var(--scale)) "Roboto",sans-serif; color:var(--ink); text-align:center; outline:none;
+  }
+  .add{
+    display:block; width:calc(100% - 40px); margin:4px 20px 10px; padding:17px 18px; border-radius:14px;
+    border:1px dashed var(--edge2); background:none; color:var(--green); font:calc(17px*var(--scale)) "Roboto",sans-serif; cursor:pointer;
+  }
+  .add:hover{background:rgba(39,58,52,.05)}
+  .card{
+    display:flex; align-items:center; width:calc(100% - 40px); margin:5px 20px; padding:15px 8px 15px 18px;
+    border-radius:14px; background:var(--card); border:0; text-align:left; font:inherit; color:var(--ink); cursor:pointer;
+  }
+  .card.outline{background:none; border:1px solid var(--edge2)}
+  .card.here{background:none; border:1px solid var(--edge2); cursor:default}
+  .card:not(.here):hover{filter:brightness(.985)}
+  .card b{display:block; font-weight:400; font-size:calc(17px*var(--scale)); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .card.here b{color:var(--muted)}
+  .card span{display:block; font-size:calc(13px*var(--scale)); color:var(--muted); padding-top:3px}
+  .row{
+    display:flex; align-items:center; width:100%; padding:14px 6px 14px 22px; border:0; background:none;
+    text-align:left; font:inherit; color:var(--ink); cursor:pointer;
+  }
+  .row:hover{background:rgba(39,58,52,.04)}
+  .row b{display:block; font-weight:400; font-size:calc(17px*var(--scale)); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .row span{display:block; font-size:calc(14px*var(--scale)); color:var(--muted); padding-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  /* A place with nothing in it says so, and says nothing else. */
+  /* What a note keeps: one line of chips under the writing, pushed along rather than given room of its own. */
+  .attached{display:flex; gap:8px; align-items:center; padding:0 10px 10px; flex:0 0 auto}
+  .attached .reaching{display:flex; gap:8px; overflow-x:auto; flex:1 1 auto; min-width:0}
+  .chip{
+    display:block; flex:0 0 auto; max-width:180px; padding:7px 12px; border-radius:12px; text-align:left;
+    border:1px solid var(--edge2); background:none; color:var(--ink); font:inherit; cursor:pointer;
+  }
+  .chip b{display:block; font-weight:400; font-size:calc(13px*var(--scale)); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .chip span{display:block; font-size:calc(11px*var(--scale)); color:var(--muted)}
+  .empty{padding:72px 20px 0; text-align:center; font-size:calc(16px*var(--scale)); color:var(--muted)}
+  .what{flex:1; min-width:0}
+  .arrow{
+    min-width:48px; min-height:48px; display:flex; align-items:center; justify-content:center; border:0; background:none;
+    font:calc(15px*var(--scale)) "Roboto",sans-serif; color:var(--muted); cursor:pointer; border-radius:24px; flex:0 0 auto;
+  }
+  .arrow.on{color:var(--green)}
+  /* Something an address has not been given yet. A mark, not a control: what to do about it is in the menu. */
+  .waiting{flex:0 0 auto; min-width:40px; padding:0 8px 0 4px; text-align:center; font-size:15px; color:var(--green)}
+  .arrow:hover{background:rgba(39,58,52,.08)}
+  .carry{display:flex; align-items:center; padding:2px 6px 12px 20px}
+  .carry b{display:block; font-weight:400; font-size:calc(16px*var(--scale))}
+  .carry span{display:block; font-size:calc(13px*var(--scale)); color:var(--muted)}
+  .carry button{background:none; border:0; font:calc(14px*var(--scale)) "Roboto",sans-serif; color:var(--warn); cursor:pointer; padding:12px 14px; border-radius:24px}
+  .carry button:hover{background:rgba(140,59,46,.08)}
+  .menu{position:relative}
+  .popup{
+    position:absolute; top:44px; right:0; min-width:236px; padding:6px 0; z-index:5;
+    background:var(--sheet); border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,.22);
+  }
+  .popup button{display:block; width:100%; padding:13px 20px; text-align:left; background:none; border:0; font:calc(17px*var(--scale)) "Roboto",sans-serif; color:var(--ink); cursor:pointer}
+  .popup button:hover{background:rgba(39,58,52,.06)}
+  .popup .line{height:1px; margin:6px 0; background:var(--edge2)}
+  /* The reading ladder sits in the menu itself: A− and A+ either side of the rungs, stepping the page
+     underneath while the menu stays open. */
+  .popup .ladder{display:flex; align-items:center; padding:4px 6px}
+  .popup .ladder button{
+    min-width:48px; min-height:48px; padding:0 8px; border:0; background:none; border-radius:24px;
+    font-family:"Roboto",sans-serif; color:var(--ink); cursor:pointer;
+  }
+  .popup .ladder button:hover:not(:disabled){background:rgba(39,58,52,.06)}
+  .popup .ladder button:disabled{color:var(--muted); cursor:default}
+  .popup .ladder .less{font-size:calc(15px*var(--scale))}
+  .popup .ladder .more{font-size:calc(22px*var(--scale))}
+  .popup .rungs{flex:1; display:flex; align-items:flex-end; justify-content:center; gap:4px; height:24px}
+  .popup .rungs span{width:3px; background:var(--edge2); cursor:pointer}
+  .popup .rungs span.on{background:var(--green)}
+
+  /* The colours one thing can be given, drawn as the colours themselves. */
+  .popup .tones{padding:6px 16px 12px}
+  .popup .tones input{-webkit-appearance:none; appearance:none; width:100%; height:26px;
+    background:transparent; cursor:pointer}
+  .popup .tones input::-webkit-slider-runnable-track{height:18px; border-radius:9px;
+    border:1px solid var(--rule); background:var(--band)}
+  .popup .tones input::-moz-range-track{height:18px; border-radius:9px;
+    border:1px solid var(--rule); background:var(--band)}
+  .popup .tones input::-webkit-slider-thumb{-webkit-appearance:none; appearance:none; width:26px; height:26px;
+    margin-top:-5px; border-radius:50%; border:2px solid var(--ink); background:var(--grip)}
+  .popup .tones input::-moz-range-thumb{width:22px; height:22px; border-radius:50%;
+    border:2px solid var(--ink); background:var(--grip)}
+  .popup .tints{display:flex; align-items:center; gap:2px; padding:8px 12px}
+  .popup .tints span{flex:1; aspect-ratio:1; max-height:20px; border-radius:50%; border:1px solid var(--rule); cursor:pointer}
+  .popup .tints span.on{border:3px solid var(--ink)}
+  /* A line held off the list: raised, and the ones it passes close up behind it. */
+  .lifted{opacity:.6; box-shadow:0 10px 26px rgba(39,58,52,.26); transform:scale(1.015); cursor:grabbing}
+  /* The dialogs, as the Android ones they stand in for. */
+  .scrim{position:absolute; inset:0; z-index:8; background:rgba(20,24,22,.45); display:flex; align-items:center; justify-content:center; padding:24px}
+  .dialog{width:100%; background:var(--sheet); border-radius:4px; padding:22px 0 8px; box-shadow:0 12px 34px rgba(0,0,0,.3); max-height:100%; overflow-y:auto}
+  .dialog h3{margin:0 24px 6px; font-size:calc(20px*var(--scale)); font-weight:450}
+  .dialog p{margin:0 24px; font-size:calc(14px*var(--scale)); color:var(--muted)}
+  .dialog p.plain{font-size:calc(15px*var(--scale)); color:var(--ink); margin-top:14px; white-space:pre-line}
+  .dialog .who{display:block; width:100%; text-align:left; border:0; background:none; padding:14px 24px 10px; cursor:pointer; font:inherit; color:var(--ink)}
+  .dialog .who:hover{background:rgba(39,58,52,.06)}
+  .dialog .who b{display:block; font-weight:400; font-size:calc(15px*var(--scale)); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .dialog .who span{font-size:calc(13px*var(--scale)); color:var(--muted)}
+  .actions{display:flex; justify-content:flex-end; gap:4px; padding:10px 12px 4px; flex-wrap:wrap}
+  .actions button{background:none; border:0; padding:12px 14px; font:500 calc(14px*var(--scale)) "Roboto",sans-serif; letter-spacing:.04em; text-transform:uppercase; color:var(--green); cursor:pointer; border-radius:4px}
+  .actions button:hover{background:rgba(39,58,52,.08)}
+  /* A field you type into: quiet until it has the cursor, then the underline says so. The browser's own
+     focus ring would otherwise draw a hard box around it, which is not how the Android field looks. */
+  .field{
+    width:calc(100% - 48px); margin:16px 24px 6px; padding:10px 2px 8px; border:0;
+    border-bottom:1px solid var(--edge2); background:none; border-radius:2px 2px 0 0;
+    font:calc(16px*var(--scale)) "Roboto",sans-serif; color:var(--ink);
+  }
+  .field::placeholder{color:var(--muted)}
+  .field:focus{outline:none; border-bottom:2px solid var(--green); padding-bottom:7px; background:rgba(40,86,70,.04)}
+
+  .spec{flex:1 1 280px; min-width:0; display:flex; flex-direction:column; gap:20px}
+  .spec h3{
+    margin:0 0 8px; font:500 11px/1 "IBM Plex Mono",ui-monospace,monospace; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--faint);
+  }
+  .levels{margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:10px; font-size:14px}
+  .levels li{display:grid; grid-template-columns:auto 1fr; gap:12px; align-items:baseline}
+  .levels code{font:500 12px "IBM Plex Mono",ui-monospace,monospace; color:var(--accent)}
+  .levels span{color:var(--dim)}
+  dl{margin:0; display:grid; grid-template-columns:auto 1fr; gap:7px 18px; font-size:14px}
+  dt{color:var(--dim)}
+  dd{margin:0; font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:13px; font-variant-numeric:tabular-nums}
+  .caveat{
+    margin:0; padding:16px 18px; background:var(--panel); border-left:2px solid var(--accent);
+    font-size:14px; color:var(--dim);
+  }
+  .caveat strong{color:var(--text); font-weight:600}
+</style>
+
+<div class="sheet">
+  <header>
+    <span class="eyebrow">Android · v0.0.35</span>
+    <h1>The pad, at phone size</h1>
+    <p>Open it and write. The arrow in the corner opens the shelves — collections, then books, then notes — where <b>+</b> adds whatever that level holds and <b>⋮</b> holds everything about the thing you are standing in. Press and hold any collection, book or note to lift it and drag it into the order you want.</p>
+  </header>
+
+  <div class="stage">
+    <div class="phone" id="phone"></div>
+
+    <div class="spec">
+      <div>
+        <h3>Sharing, four levels</h3>
+        <ul class="levels">
+          <li><code>everything</code><span>every collection, book and note, including ones made later</span></li>
+          <li><code>collection</code><span>that collection and every book in it</span></li>
+          <li><code>book</code><span>that book and every note in it</span></li>
+          <li><code>note</code><span>that note alone</span></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Screen</h3>
+        <dl>
+          <dt>Frame</dt><dd>393 × 873 dp</dd>
+          <dt>Tested on</dt><dd>1080 × 2400</dd>
+          <dt>Note text</dt><dd>13–31 sp</dd>
+          <dt>Rules every</dt><dd>1.52 × text</dd>
+          <dt>Card radius</dt><dd>14 dp</dd>
+          <dt>Tap targets</dt><dd>48 dp</dd>
+          <dt>Paper</dt><dd>10 rungs</dd>
+          <dt>Lightest</dt><dd>#FFFFFF</dd>
+          <dt>Darkest</dt><dd>#121413</dd>
+        </dl>
+      </div>
+      <p class="caveat">
+        <strong>A preview, not the app.</strong> HTML standing in for the Android views. On the phone the keyboard
+        opens with the note, the first line of a note is drawn bold because it is that note's name, a long
+        press lifts a line so it can be dragged into place, and the phone's own back
+        button leaves the shelves; here, press and hold lifts in the same way, and <b>Esc</b> stands in for that
+        back button. A web address written in a note is underlined on the phone and opens when it is tapped;
+        here it is only text, because a text box cannot hold a link. The reading size and the paper are both
+        remembered on the phone; here they last until you reload.
+        Sharing records who receives what — <strong>nothing is sent yet.</strong> Nothing here is stored: reload
+        and the sample pad comes back.
+      </p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var phone=document.getElementById("phone");
+  // `place` is where the reader dragged something to. Anything never dragged sits at minus its own clock,
+  // so a level reads newest first until the reader says otherwise, and anything new arrives at the top.
+  var collections=[{id:"c1",name:"My notes",place:0},{id:"c2",name:"Allotment",place:1,colour:3}];
+  var books=[{id:"b1",collection:"c1",name:"Notes",place:0},{id:"b2",collection:"c1",name:"Reading",place:1,colour:5},
+             {id:"b3",collection:"c2",name:"Plot 14",place:0}];
+  var pages=[
+    {id:"p1",book:"b1",text:"Call the garage about the brakes\nPick up the parcel before six\nRye bread, oat milk",updated:4,place:0},
+    {id:"p2",book:"b1",text:"Ideas for the allotment\nRhubarb along the north fence",updated:3,place:1},
+    {id:"p3",book:"b2",text:"Chain wax, not oil\nBottom bracket creaks out of the saddle",updated:2,place:0},
+    {id:"p4",book:"b3",text:"Water butt by the shed\nAsk the committee about the key",updated:1,place:0}
+  ];
+  /**
+   * Files kept with a note. On the phone these are copies in the app's own folder, one row apiece; here they
+   * are only their names and sizes, which is all the strip under the writing ever shows.
+   */
+  var kept=[{id:"f1",note:"p2",name:"allotment-plan.png",kind:"image/png",bytes:2511}];
+  function filesOf(note){ return kept.filter(function(f){ return f.note===note; }); }
+  function sizeOf(bytes){
+    if(bytes<1024) return bytes+(bytes===1?" byte":" bytes");
+    if(bytes<1024*1024) return Math.round(bytes/1024)+" KB";
+    var mb=bytes/(1024*1024);
+    return (mb<10?Math.round(mb*10)/10:Math.round(mb))+" MB";
+  }
+
+  var shares=[{scope:"library",target:"*",address:"MxG18TTN0S8BJTCJ4YHR@89.32.7.4:9001",mine:true},
+              {scope:"book",target:"b2",address:"MxQ42KKP7T1CJDLR9WBX@77.12.9.3:9001",mine:false}];
+  var addresses=[{address:"MxG18TTN0S8BJTCJ4YHR@89.32.7.4:9001",name:"My tablet",mine:true},
+                 {address:"MxQ42KKP7T1CJDLR9WBX@77.12.9.3:9001",name:"Ana",mine:false}];
+  var nextId=5, open=null, trail=null, carrying=null;
+
+  /**
+   * Which revision of which page reached which address. Maxima carries a message to a contact rather than
+   * holding it for collection, so the sending side is the only place that can know what got through: a page
+   * stops waiting when an address has received it, and everything written afterwards is owed again.
+   */
+  var sent={"MxG18TTN0S8BJTCJ4YHR@89.32.7.4:9001|p1":4};
+  function mark(address,page){ return address+"|"+page; }
+  /** Everything owed, page by page and address by address. */
+  function owed(held){
+    var out=[];
+    held.filter(function(p){
+      var book=bookOf(p.book);
+      if(!book||!onShelves(book)) return false;
+      var of=collections.filter(function(c){ return c.id===book.collection; })[0];
+      return !of||onShelves(of);
+    }).forEach(function(p){
+      var book=bookOf(p.book), collection=book?book.collection:"";
+      Object.keys(audience(collection,p.book,p.id)).forEach(function(address){
+        var got=sent[mark(address,p.id)];
+        if(got!==undefined&&got>=p.updated) return;
+        out.push({page:p.id,address:address});
+      });
+    });
+    return out;
+  }
+  /** How many pages one thing owes, counted once however many addresses are owed each of them. */
+  function owing(thing){
+    var held;
+    if(thing.kind==="page") held=[find(thing)].filter(Boolean);
+    else if(thing.kind==="book") held=inBook(thing.id);
+    else if(thing.kind==="collection")
+      held=books.filter(function(b){ return b.collection===thing.id&&onShelves(b); })
+        .reduce(function(all,b){ return all.concat(inBook(b.id)); },[]);
+    else held=pages.filter(onShelves).filter(function(p){ return !blank(p); });
+    var seen={};
+    owed(held).forEach(function(wait){ seen[wait.page]=true; });
+    return Object.keys(seen).length;
+  }
+
+  /**
+   * Ten papers, from the brightest white through cream and kraft to a dark page, each a whole set rather than
+   * a tint: the ink, the rules, the cards and the accent are chosen for that paper, so the pad reads the same
+   * way on every rung. Row 3 is the paper the app has always had.
+   */
+  var PAPERS=[
+    // paper     ink        muted      rules      card       accent     warning    menu sheet
+    ["#FFFFFF","#1E2422","#6E7674","#E8E8E4","#F3F3F0","#1F6B4F","#9C3A2A","#FFFFFF"],
+    ["#FDFCFA","#22302B","#767F7B","#E7E4DC","#F2F1EC","#24614A","#973B2C","#FEFEFD"],
+    ["#FBFAF6","#273A34","#7C8A84","#E4DFD1","#F2EFE5","#285646","#8C3B2E","#FCFCFA"],
+    ["#F8F4E9","#2A3A33","#7D8880","#DFD7C3","#EEE8D8","#2A5A46","#8A3C2E","#FAF7EF"],
+    ["#F2EBDB","#2C3A32","#7B857C","#D4C9B1","#E7DDC7","#2D5B44","#883D2F","#F6F1E4"],
+    ["#E9E0CA","#2E3A31","#78826F","#C9BC9F","#DDD1B5","#34604A","#8A4030","#EFE8D6"],
+    ["#DACEB3","#2B342B","#6E7865","#B9A989","#CDBD9D","#38614C","#8B4433","#E2D9C3"],
+    ["#4A4A43","#EFECE2","#A9A99D","#5C5C54","#55554E","#8FBCA6","#D98A7A","#55554E"],
+    ["#262B28","#E6E5DE","#9AA39B","#3B413B","#30352F","#8FBCA6","#D98A7A","#30352F"],
+    ["#121413","#E8E8E2","#8D948C","#272B28","#1C1F1D","#93C3A9","#DC8E7E","#1C1F1D"]
+  ];
+  var TOKENS=["--paper","--ink","--muted","--rule","--card","--green","--warn","--sheet"];
+
+  /**
+   * The colours a single collection, book or page can be given: eight and none, each in two strengths so the
+   * same choice reads on the brightest paper and on the darkest. What is stored is which colour, never a
+   * pixel value, so a thing keeps its colour when the paper under it moves.
+   */
+  // Full colours rather than pastels of them: a wash of a washed-out colour is nothing at all. The second
+  // of each pair is for the dark paper, lifted only as far as it has to be to carry on a dark ground.
+  var TINTS=[
+    [null,null],            ["#E02B20","#FF6B5E"], ["#F07800","#FF9E3D"],
+    ["#D9A400","#FFCB3D"],  ["#1DA02C","#52D96A"], ["#00A89B","#2FE0CE"],
+    ["#1464E0","#5AA6FF"],  ["#7A3CE0","#B085FF"], ["#E02B8A","#FF6FB5"]
+  ];
+  var TINT_NAMES=["No colour","Red","Orange","Yellow","Green","Teal","Blue","Purple","Pink"];
+  /**
+   * How loudly a colour lands: pastel at one end, the colour itself at the other. The hue says which colour
+   * a thing is, the tone says how loudly — two questions, because one answer cannot be both.
+   */
+  // A pad starts loud enough that eight colours are eight colours at a glance, with quieter rungs below.
+  var TONES=[0.4,0.7,1.0,1.4,1.9,2.5,3.2,4.0,5.0,6.2], FIRST_TONE=3, toneAt=FIRST_TONE;
+  function weigh(base,tone,most){ return Math.min(base*TONES[Math.max(0,Math.min(TONES.length-1,tone))],most); }
+  function darkPaper(){ return paperAt>=PAPERS.length-3; }
+  function tintOf(colour){ return colour>0&&colour<TINTS.length?TINTS[colour][darkPaper()?1:0]:null; }
+  /** A colour laid over a surface: cards and paper are washed, so what is written on them still reads. */
+  function over(colour,ground,weight){
+    var paint=tintOf(colour);
+    if(!paint) return ground;
+    function part(hex,at){ return parseInt(hex.substr(1+at*2,2),16); }
+    var mixed="#";
+    for(var at=0;at<3;at++){
+      var value=Math.round(part(ground,at)+(part(paint,at)-part(ground,at))*weight);
+      mixed+=("0"+value.toString(16)).slice(-2);
+    }
+    return mixed;
+  }
+  function tint(thing){ return thing.colour||0; }
+  /**
+   * Two of these papers are used: a light one and a dark one, and which is in use is the reader's own
+   * setting rather than a scale in the menu — a scale of greys is not a choice anybody wants to make twice.
+   */
+  var FIRST_PAPER=2, DARK_PAPER=8;
+  function paperNow(){
+    return window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?DARK_PAPER:FIRST_PAPER;
+  }
+  var paperAt=paperNow();
+  /** Laid out across the screen as cards, or one under the other as a list. */
+  var cards=true;
+  /** Takes a rung of the paper ladder into use. Everything drawn inside the phone follows these. */
+  function usePaper(rung){
+    paperAt=Math.max(0,Math.min(PAPERS.length-1,rung));
+    TOKENS.forEach(function(token,at){ phone.style.setProperty(token,PAPERS[paperAt][at]); });
+    phone.style.setProperty("--edge2",PAPERS[paperAt][3]);
+  }
+
+  function el(tag,cls,text){ var e=document.createElement(tag); if(cls)e.className=cls; if(text!=null)e.textContent=text; return e; }
+  function blank(note){ return !note || !note.text.trim(); }
+  function bookOf(id){ for(var i=0;i<books.length;i++) if(books[i].id===id) return books[i]; return books[0]; }
+  function nameOf(id){ for(var i=0;i<collections.length;i++) if(collections[i].id===id) return collections[i].name; return "My notes"; }
+  function byPlace(a,b){ return a.place-b.place; }
+  /** On the shelves means neither put away in the archive nor waiting in the bin. */
+  function onShelves(thing){ return !thing.archived && !thing.binned; }
+  function inBook(id){ return pages.filter(function(p){ return p.book===id && onShelves(p) && !blank(p); }).sort(byPlace); }
+  function newest(){ return pages.filter(onShelves).slice().sort(function(a,b){ return b.updated-a.updated; })[0]; }
+  function discardIfBlank(){ if(open&&blank(open)) pages=pages.filter(function(p){ return p!==open; }); }
+  function heading(p){ return p.text.replace(/^\n+/,"").split("\n")[0].trim()||"Untitled"; }
+  function rest(p){ return p.text.replace(/^\n+/,"").split("\n").slice(1).join(" ").trim(); }
+  function sharedOn(scope,target){ return shares.filter(function(s){ return s.scope===scope&&s.target===target; }); }
+  function note(words){ window.alert(words); }
+  function count(many,one,some){ return many+(many===1?one:some); }
+
+  // ---- the page ------------------------------------------------------------------------------------
+  function showPad(page){
+    open=page; trail=null; carrying=null; phone.innerHTML="";
+    var bar=el("div","bar");
+    // The page uses the same back arrow as every level, going up to the book it sits in.
+    var corner=el("button","tap","←"); corner.setAttribute("aria-label","Back to this book");
+    corner.onclick=function(){ keepVersion(page,""); openShelves(page.book); };
+    bar.appendChild(corner);
+    // Silence means saved, and given to whoever receives it. Anything else is said in this one line.
+    var behind=owing({kind:"page",id:page.id});
+    var said=el("div","said",behind?(behind===1?"Not sent yet":"Not sent to "+behind+" addresses"):"");
+    bar.appendChild(said);
+    var menu=el("div","menu");
+    var owedMark=syncMark({kind:"page",id:page.id,book:page.book,name:"this note"});
+    if(owedMark) bar.appendChild(owedMark);
+    var dots=el("button","tap","⋮"); dots.setAttribute("aria-label","This note");
+    dots.onclick=function(ev){ ev.stopPropagation();
+      menuFor(menu,{kind:"page",id:page.id,parent:page.book,name:heading(page),colour:page.colour,page:page}); };
+    menu.appendChild(dots); bar.appendChild(menu);
+    phone.appendChild(bar);
+    var sheet=el("textarea","page"); sheet.id="pad-page"; sheet.value=page.text; sheet.spellcheck=false;
+    sheet.placeholder="Write. The first line is its name.";
+    sheet.setAttribute("aria-label","Note");
+    sheet.oninput=function(){ page.text=sheet.value; page.updated=Date.now(); };
+    phone.appendChild(sheet);
+    phone.appendChild(fileStrip({kind:"page",id:page.id,name:"this note"}));
+    if(false){
+      var held=[], along=el("div","attached");
+      held.forEach(function(file){
+        var chip=el("button","chip");
+        chip.appendChild(el("b",null,file.name));
+        chip.appendChild(el("span",null,sizeOf(file.bytes)));
+        chip.setAttribute("aria-label","Open "+file.name+", "+sizeOf(file.bytes));
+        chip.onclick=function(){ note("On the phone this hands "+file.name+" to whatever app can open it.\n\nThe pad keeps its own copy, so nothing is lost if the original is moved or deleted."); };
+        chip.oncontextmenu=function(ev){ ev.preventDefault(); askDropFile(file); };
+        along.appendChild(chip);
+      });
+      phone.appendChild(along);
+    }
+    applySize(sheet);
+    washPage();
+    sheet.setSelectionRange(sheet.value.length,sheet.value.length);
+  }
+
+  /** One place sets the text size and the rule pitch, so they cannot drift apart. */
+  // Ten rungs of reading size, the steps growing as they go up because a size you can already read needs a
+  // bigger push to be noticeably bigger. The rules are drawn from the text's own line height, so they follow it.
+  var SIZES=[11,12,14,15,17,19,21,24,26,29];
+  /**
+   * The middle rung, and the one a pad starts on: 17, which is what everything else on a phone writes in. An
+   * app that opens at its own idea of a size is an app you have to set up before you can use it, so this one
+   * opens at the ordinary one and the ladder is a way to leave it, five rungs either way.
+   */
+  var FIRST_SIZE=4;
+  function leading(px){ return Math.round(px*1.52); }
+  var size=SIZES[FIRST_SIZE];
+  function applySize(sheet){
+    phone.style.setProperty("--scale",size/SIZES[FIRST_SIZE]);
+    sheet.style.setProperty("--size",size+"px");
+    sheet.style.setProperty("--lead",leading(size)+"px");
+  }
+  /** A page given a colour is written on paper of that colour, washed enough to leave the writing alone. */
+  /**
+   * The room takes the colour of the thing you are standing in: the note being written, or on the shelves
+   * the level itself — you cannot see a level's own card from inside it, so the room is what shows it.
+   */
+  function washPage(){
+    var own=open?tint(open):standingColour();
+    phone.style.setProperty("--paper",over(own,PAPERS[paperAt][0],weigh(0.12,toneAt,0.72)));
+    phone.style.setProperty("--rule",over(own,PAPERS[paperAt][3],weigh(0.35,toneAt,1)));
+  }
+  function standingColour(){
+    if(!trail||!trail.length) return padColour;
+    var step=trail[trail.length-1];
+    if(step.kind==="library") return padColour;
+    var it=find({kind:step.kind,id:step.id});
+    return it?(it.colour||0):0;
+  }
+  /** The whole pad's own colour: it belongs to no collection, so it is kept on its own. */
+  var padColour=0;
+  /** The rung the page stands on, the nearest one for a size chosen before the ladder had ten. */
+  function rung(){
+    var nearest=0;
+    SIZES.forEach(function(option,at){ if(Math.abs(option-size)<Math.abs(SIZES[nearest]-size)) nearest=at; });
+    return nearest;
+  }
+  /**
+   * The reading ladder, in the menu rather than behind a box: A− and A+ step the page underneath while the
+   * menu stays open, so the size is found by looking at the writing rather than by naming it.
+   */
+  function ladder(){
+    var row=el("div","ladder");
+    var less=el("button","less","A−"); less.setAttribute("aria-label","Smaller text");
+    var more=el("button","more","A+"); more.setAttribute("aria-label","Bigger text");
+    var rungs=el("div","rungs");
+    SIZES.forEach(function(option,at){
+      var bar=el("span"); bar.style.height=(7+at*2)+"px";
+      bar.title="Text size "+(at+1)+" of "+SIZES.length;
+      bar.onclick=function(ev){ ev.stopPropagation(); size=option; applySize(phone.querySelector(".page")||document.body); mark(); };
+      rungs.appendChild(bar);
+    });
+    function mark(){
+      var at=rung();
+      [].forEach.call(rungs.children,function(bar,i){ bar.className=i<=at?"on":""; });
+      less.disabled=at===0; more.disabled=at===SIZES.length-1;
+      rungs.setAttribute("aria-label","Text size, step "+(at+1)+" of "+SIZES.length);
+    }
+    function step(by){
+      return function(ev){
+        ev.stopPropagation();
+        var at=rung()+by;
+        if(at<0||at>=SIZES.length) return;
+        size=SIZES[at];
+        phone.style.setProperty("--scale",size/SIZES[FIRST_SIZE]);
+        var sheet=phone.querySelector(".page");
+        if(sheet){ sheet.style.setProperty("--size",size+"px"); sheet.style.setProperty("--lead",leading(size)+"px"); }
+        mark();
+      };
+    }
+    less.onclick=step(-1); more.onclick=step(1);
+    row.appendChild(less); row.appendChild(rungs); row.appendChild(more);
+    mark();
+    return row;
+  }
+  /**
+   * The paper ladder: the papers themselves, lightest first, with the one in use ringed. Stepping repaints
+   * the page behind the menu and the menu with it, so the choice is made by looking at the pad.
+   */
+  /**
+   * The colours one thing can be given, drawn as the colours themselves with the one it has ringed. The
+   * first is no colour at all, which is the paper, and which is what everything starts as. One scale, and
+   * it is for colour: light and dark is the reader's own setting, not a row of greys in here.
+   */
+  function palette(thing){
+    if(!thing||thing.kind==="archive"||thing.kind==="bin"||thing.kind==="inbox") return null;
+    var row=el("div","tints");
+    TINTS.forEach(function(pair,colour){
+      var dot=el("span");
+      dot.title=TINT_NAMES[colour];
+      dot.setAttribute("aria-label",TINT_NAMES[colour]+" for "+thing.name);
+      dot.onclick=function(ev){
+        ev.stopPropagation();
+        // The whole pad is a room too, and it belongs to no collection: its colour is kept on its own.
+        if(thing.kind==="library"){ padColour=colour; painted=true; washPage(); repaintMenu(); return; }
+        var it=find(thing); if(!it) return;
+        it.colour=colour;
+        if(open&&open.id===thing.id){ washPage(); }
+        painted=true;
+        repaintMenu();
+      };
+      row.appendChild(dot);
+    });
+    function mark(){
+      var it=thing.kind==="library"?null:find(thing);
+      var has=thing.kind==="library"?padColour:(it?(it.colour||0):(thing.colour||0));
+      [].forEach.call(row.children,function(dot,at){
+        dot.className=at===has?"on":"";
+        dot.style.background=at?TINTS[at][darkPaper()?1:0]:PAPERS[paperAt][0];
+      });
+    }
+    menuMarks.push(mark);
+    mark();
+    return row;
+  }
+
+  /**
+   * The foot of the screen: a paperclip, and beside it everything this thing can reach - what is kept here,
+   * then what the book and the collection around it keep, because a file put on a collection is meant for
+   * everything in it. A clip rather than a menu row: attaching is done while looking at the thing.
+   */
+  function fileStrip(thing){
+    var strip=el("div","attached");
+    var clip=el("button","tap","📎");
+    clip.setAttribute("aria-label","Attach a file");
+    clip.onclick=function(){ note("On the phone this opens the system file picker."+"\n\n"
+      +"What you pick is copied into the pad's own folder and kept with "+thing.name+" - copied, not "
+      +"pointed at, so nothing is lost if the original is moved."+"\n\n"
+      +"A file kept with a collection or a book is there on everything inside it."); };
+    // The clip sits in the corner the thumb reaches, and what is already kept scrolls away from it, so
+    // the control stays put however many files there are.
+    var along=el("div","reaching");
+    strip.appendChild(along);
+    filesReaching(thing).forEach(function(file){
+      var mine=file.held===thing.kind;
+      var chip=el("button","chip"+(mine?"":" borrowed"));
+      chip.appendChild(el("b",null,file.name));
+      chip.appendChild(el("span",null,sizeOf(file.bytes)+(mine?"":" \u00b7 "+file.held)));
+      chip.setAttribute("aria-label","Open "+file.name+", "+sizeOf(file.bytes)
+        +(mine?"":", kept with the "+file.held));
+      chip.onclick=function(){ note("On the phone this hands "+file.name+" to whatever app can open it."); };
+      along.appendChild(chip);
+    });
+    strip.appendChild(clip);
+    return strip;
+  }
+
+  /** What one thing can reach: its own files, then its book's, then its collection's. Nearest first. */
+  function filesReaching(thing){
+    var out=[], seen={};
+    function take(kind,id){
+      if(!id) return;
+      kept.filter(function(f){ return f.note===id&&(f.held||"page")===kind; }).forEach(function(f){
+        if(seen[f.id]) return; seen[f.id]=1; out.push(f);
+      });
+    }
+    take(thing.kind,thing.id);
+    if(thing.kind==="page"){
+      var page=pages.filter(function(n){ return n.id===thing.id; })[0];
+      var book=page&&books.filter(function(b){ return b.id===page.book; })[0];
+      if(book){ take("book",book.id); take("collection",book.collection); }
+    } else if(thing.kind==="book"){
+      var b=books.filter(function(x){ return x.id===thing.id; })[0];
+      if(b) take("collection",b.collection);
+    }
+    return out;
+  }
+
+  /**
+   * Beside the dots: whether what you are looking at is up to date with everybody it reaches, and a tap to
+   * deal with it. A thing that reaches nobody shows nothing - a mark that is always there says nothing.
+   */
+  function syncMark(thing){
+    // The same walk Sync now makes, so the mark and the box it opens can never disagree.
+    var held;
+    if(thing.kind==="page") held=[find(thing)].filter(Boolean);
+    else if(thing.kind==="book") held=inBook(thing.id);
+    else if(thing.kind==="collection")
+      held=books.filter(function(b){ return b.collection===thing.id&&onShelves(b); })
+        .reduce(function(all,b){ return all.concat(inBook(b.id)); },[]);
+    else held=pages.filter(onShelves).filter(function(p){ return !blank(p); });
+    var seen={};
+    owed(held).forEach(function(wait){ seen[wait.page]=true; });
+    var count=Object.keys(seen).length;
+    var reaches=held.some(function(page){
+      return page&&Object.keys(whoReaches({kind:"page",id:page.id,book:page.book})).length;
+    });
+    // Three states, always one of them showing. A thing that reaches nobody says so quietly
+    // rather than by not being there: an indicator you have to notice the absence of is not one.
+    var mark=el("button","tap sync",!reaches?"·":count?"↑"+(count>9?"9+":count):"✓");
+    mark.style.color=(count&&reaches)?"var(--green)":"var(--faint)";
+    mark.setAttribute("aria-label",!reaches?"On this phone only. Tap to see about sharing it."
+      :count?(count===1?"One note waiting to go. Sync now."
+      :count+" notes waiting to go. Sync now."):"Everything here has gone. Sync now.");
+    mark.onclick=function(ev){ ev.stopPropagation(); sendNow(thing); };
+    return mark;
+  }
+
+  /** The tone, drawn as the wash each one would make in the colour of what you are standing in. */
+  function tones(thing){
+    var row=el("div","tones");
+    var slide=document.createElement("input");
+    slide.type="range"; slide.min=0; slide.max=TONES.length-1; slide.step=1; slide.value=toneAt;
+    slide.setAttribute("aria-label","Tone, pastel at the left, the colour itself at the right");
+    row.appendChild(slide);
+    // The band is drawn in the colour chosen right now, not the one the thing had when the menu opened.
+    // With no colour chosen there is nothing to show a tone of, so it runs card to ink instead of
+    // borrowing some colour the thing does not have.
+    function mark(){
+      var shown=chosenColour(thing);
+      var card=PAPERS[paperAt][4], ink=PAPERS[paperAt][1], stops=[];
+      for(var at=0;at<TONES.length;at++)
+        stops.push(shown?over(shown,card,weigh(0.22,at,0.92)):mix(card,ink,0.06+0.5*at/(TONES.length-1)));
+      row.style.setProperty("--band","linear-gradient(to right,"+stops.join(",")+")");
+      row.style.setProperty("--grip",stops[toneAt]);
+      slide.value=toneAt;
+      row.title="Tone, "+(toneAt+1)+" of "+TONES.length;
+    }
+    slide.oninput=function(ev){ ev.stopPropagation(); toneAt=+slide.value; washPage(); painted=true; repaintMenu(); };
+    slide.onclick=function(ev){ ev.stopPropagation(); };
+    menuMarks.push(mark);
+    mark();
+    return row;
+  }
+
+  /** Two colours mixed, for the one band that has to be drawn with no colour to draw it in. */
+  function mix(from,to,much){
+    function part(c,at){ return parseInt(c.slice(1+at*2,3+at*2),16); }
+    var f=Math.max(0,Math.min(1,much)), out="#";
+    for(var at=0;at<3;at++){
+      var v=Math.round(part(from,at)+(part(to,at)-part(from,at))*f);
+      out+=("0"+v.toString(16)).slice(-2);
+    }
+    return out;
+  }
+
+  /**
+   * The colour the open menu is about, as it stands now, and every mark in that menu. The palette writes
+   * the colour and the tone band reads it, so choosing one repaints the other instead of leaving it
+   * showing what the thing had when the menu opened.
+   */
+  var menuMarks=[];
+  function chosenColour(thing){
+    if(!thing) return 0;
+    if(thing.kind==="library") return padColour;
+    var it=find(thing);
+    return it?(it.colour||0):(thing.colour||0);
+  }
+  function repaintMenu(){ menuMarks.forEach(function(mark){ mark(); }); }
+
+  /** Something was given a colour while the menu was over it, so the level is redrawn when it closes. */
+  var painted=false;
+
+  /**
+   * The text of whatever the menu was opened on — a page, a book, a collection, the whole pad. Pages are
+   * separated by a blank line and come in the order the reader put them in.
+   */
+  function textOf(thing){
+    if(thing.kind==="page") return (thing.page||find(thing)||{text:""}).text;
+    var held;
+    if(thing.kind==="book") held=inBook(thing.id);
+    else if(thing.kind==="collection")
+      held=books.filter(function(b){ return b.collection===thing.id&&onShelves(b); }).sort(byPlace)
+        .reduce(function(all,b){ return all.concat(inBook(b.id)); },[]);
+    else if(thing.kind==="archive"||thing.kind==="bin")
+      held=pages.filter(function(p){ return p[thing.kind==="bin"?"binned":"archived"]&&!blank(p); });
+    else held=pages.filter(onShelves).filter(function(p){ return !blank(p); }).sort(byPlace);
+    return held.map(function(p){ return p.text.trim(); }).filter(Boolean).join("\n\n");
+  }
+
+  /**
+   * What this thing owes, and what is stopping it. Maxima hands a message to a contact's node; nothing can be
+   * fetched back from it, so a page only stops waiting when an address has actually received it.
+   */
+  function sendNow(thing){
+    var held;
+    if(thing.kind==="page") held=[find(thing)].filter(Boolean);
+    else if(thing.kind==="book") held=inBook(thing.id);
+    else if(thing.kind==="collection")
+      held=books.filter(function(b){ return b.collection===thing.id&&onShelves(b); })
+        .reduce(function(all,b){ return all.concat(inBook(b.id)); },[]);
+    else held=pages.filter(onShelves).filter(function(p){ return !blank(p); });
+    var waits=owed(held), each={}, seen={};
+    waits.forEach(function(wait){ each[wait.address]=(each[wait.address]||0)+1; seen[wait.page]=true; });
+    var behind=Object.keys(seen).length;
+    if(!behind){
+      note("Nothing is waiting in "+thing.name+".\n\nEither it is not shared with anybody, or every address already has it as it stands.");
+      return;
+    }
+    var said=(behind===1?"One note is waiting":behind+" notes are waiting")+":\n";
+    Object.keys(each).forEach(function(address){
+      var found=addresses.filter(function(a){ return a.address===address; })[0];
+      said+="\n  • "+(found?found.name:address)+" — "+each[address];
+    });
+    said+="\n\nNothing can go yet. An address has to be paired before a page can be sealed for it, and this "
+       +"build only ever asks Core for its status, never to carry anything. Until both exist the marks stay, "
+       +"because only an address receiving a note can clear one.";
+    note(said);
+  }
+
+  function sendElsewhere(thing){
+    var text=textOf(thing);
+    if(!text.trim()){ note("Nothing to send"); return; }
+    note("On the phone this opens the Android share sheet, so what you are standing in can go to a messenger, mail, anything.\n\nThat is plain text leaving Mininotes through another app — nothing to do with sharing over Minima.");
+  }
+  /**
+   * Everything a note has said. A version is kept when an editing session ends rather than at every
+   * keystroke, so the list reads as a history and not as a keystroke log.
+   */
+  var history=[];
+  function keepVersion(page,source){
+    if(!page) return;
+    var all=history.filter(function(v){ return v.note===page.id; });
+    var last=all.length?all[all.length-1]:null;
+    if(last&&last.text===page.text) return;
+    history.push({note:page.id,text:page.text,at:Date.now(),source:source||""});
+  }
+  function versionsOf(note){ return history.filter(function(v){ return v.note===note; }).reverse(); }
+
+  function versions(thing){
+    var all=versionsOf(thing.id);
+    var d=dialog(function(){});
+    d.box.appendChild(el("h3",null,"Versions"));
+    if(!all.length) d.box.appendChild(el("p",null,"Nothing yet. What this note says is kept each time you leave it."));
+    all.forEach(function(version){
+      var entry=el("button","who");
+      entry.appendChild(el("b",null,new Date(version.at).toLocaleString()));
+      var first=version.text.split(String.fromCharCode(10))[0];
+      entry.appendChild(el("span",null,(first||"(empty)")+" — "+(version.source?"came from "+version.source:"written here")));
+      entry.onclick=function(){
+        // Putting one back is another writing, not an undoing: what it says now is kept first.
+        keepVersion(open,"");
+        var it=pages.filter(function(p){ return p.id===thing.id; })[0];
+        if(it){ it.text=version.text; it.updated=Date.now(); }
+        d.scrim.remove();
+        showPad(it||open);
+      };
+      d.box.appendChild(entry);
+    });
+  }
+
+  function fresh(book){ var made={id:"p"+(nextId++),book:book,text:"",updated:Date.now(),place:-Date.now()}; pages.push(made); return made; }
+
+  // ---- the shelves, one level at a time -------------------------------------------------------------
+  var writing=null;
+  /** A pad always has somewhere to write, even if everything in it has been put away. */
+  function somewhereToWrite(){
+    if(!collections.filter(onShelves).length) collections.push({id:"c"+(nextId++),name:"My notes",place:0});
+    if(!books.filter(onShelves).length) books.push({id:"b"+(nextId++),collection:collections.filter(onShelves)[0].id,name:"Notes",place:0});
+    return books.filter(onShelves)[0].id;
+  }
+  function backToWriting(){
+    var was=pages.filter(function(p){ return p.id===writing; })[0];
+    showPad(was||newest()||fresh(somewhereToWrite()));
+  }
+  function openShelves(book){
+    if(open) writing=open.id;
+    var held=bookOf(book);
+    trail=[{kind:"library",id:"*",name:"All collections"},
+           {kind:"collection",id:held.collection,name:nameOf(held.collection)},
+           {kind:"book",id:held.id,name:held.name}];
+    browse();
+  }
+  function here(){ return trail[trail.length-1]; }
+  function adding(kind){ return kind==="library"?"New collection":kind==="collection"?"New book":"New note"; }
+
+  function browse(){
+    discardIfBlank(); open=null; phone.innerHTML=""; washPage();
+    var step=here();
+    var bar=el("div","bar");
+    // The arrow goes up one level and only exists where there is one. At the top the phone's own back
+    // leaves the shelves, and nothing here duplicates it; in this preview, Esc stands in for that.
+    // Every level's bar is built to the same measure, so the name never moves as you go in and out: where
+    // there is no level above, the arrow's place is kept empty rather than closed up.
+    if(carrying||trail.length>1){
+      var up=el("button","tap","←");
+      up.setAttribute("aria-label",carrying?"Stop moving":"Up to "+trail[trail.length-2].name);
+      up.onclick=function(){
+        if(carrying){ carrying=null; browse(); return; }
+        trail=trail.slice(0,trail.length-1); browse();
+      };
+      bar.appendChild(up);
+    } else bar.appendChild(el("div","slot"));
+    // The shelves are the app's own rooms, so they say whose they are; the note screen stays bare, its one
+    // line being kept for what is not saved or not sent.
+    bar.appendChild(el("div","called","Mininotes"));
+    // What others share with you is not kept apart: it stands among your own things, saying on itself that
+    // it came from somebody else. So there is nothing up here for it.
+    if(!carrying){
+      // Everything about a thing is managed from inside it, so this is that thing's own menu.
+      var reachMark=here().kind==="archive"||here().kind==="bin"?null:syncMark(standingIn());
+      if(reachMark) bar.appendChild(reachMark);
+      var menu=el("div","menu");
+      var own=el("button","tap","⋮"); own.setAttribute("aria-label",here().name);
+      own.onclick=function(ev){ ev.stopPropagation(); menuFor(menu,standingIn()); };
+      menu.appendChild(own); bar.appendChild(menu);
+    }
+    phone.appendChild(bar);
+    if(carrying) phone.appendChild(carryBar());
+    var list=el("div","list");
+    // Not at the top: a file belongs with a collection, a book or a note, and All collections is none of
+    // those. A clip there would be a control that refuses, which is worse than no control.
+    var clipHere=!carrying&&(here().kind==="collection"||here().kind==="book");
+    if(carrying) places().forEach(function(p){ list.appendChild(destination(p)); });
+    else {
+      var away=step.kind==="archive"||step.kind==="bin";
+      // Nothing is added to the archive or the bin: things arrive there from the shelves.
+      if(away){
+        inside(step).forEach(function(thing){ list.appendChild(awayRow(thing,step.kind==="bin")); });
+      } else if(cards) {
+        list.className="desk";
+        list.appendChild(addTile(step));
+        inside(step).forEach(function(thing){ list.appendChild(tile(thing)); });
+      } else {
+        list.appendChild(addRow(step));
+        inside(step).forEach(function(thing){ list.appendChild(thing.kind==="page"?pageRow(thing):card(thing)); });
+      }
+      var held=inside(step);
+      if(away && !held.length)
+        list.appendChild(el("div","empty",step.kind==="bin"?"The bin is empty":"Nothing put away"));
+    }
+    phone.appendChild(list);
+    if(clipHere) phone.appendChild(fileStrip(standingIn()));
+  }
+
+  function inside(step){
+    if(step.kind==="library"){
+      var out=collections.filter(onShelves).sort(byPlace).map(function(c){
+        var held=books.filter(function(b){ return b.collection===c.id && onShelves(b); }).length;
+        return {kind:"collection",id:c.id,parent:"*",name:c.name,detail:count(held," book"," books"),colour:c.colour};
+      });
+      return out;
+    }
+    if(step.kind==="archive"||step.kind==="bin") return heldIn(step.kind==="bin");
+    if(step.kind==="collection")
+      return books.filter(function(b){ return b.collection===step.id && onShelves(b); }).sort(byPlace).map(function(b){
+        var held=inBook(b.id).length;
+        return {kind:"book",id:b.id,parent:b.collection,name:b.name,detail:count(held," note"," notes"),colour:b.colour};
+      });
+    return inBook(step.id).map(function(p){
+      return {kind:"page",id:p.id,parent:p.book,name:heading(p),detail:rest(p),page:p,colour:p.colour};
+    });
+  }
+
+  /**
+   * The archive and the bin hold things from the whole pad, so they are reachable from all of it rather than
+   * from the top alone; they come after what the level itself holds, being places and not things.
+   */
+  function awayPlaces(){
+    var away=heldIn(false).length, binned=heldIn(true).length;
+    return [{kind:"archive",id:"archive",parent:"",name:"Archive",
+             detail:away?count(away," thing"," things"):"Nothing put away"},
+            {kind:"bin",id:"bin",parent:"",name:"Bin",detail:binned?count(binned," thing"," things"):"Empty"}];
+  }
+
+  /**
+   * What is in the archive, or what is in the bin: collections, then books, then notes, each saying what it
+   * is and where it came from. Only the thing itself is listed — whatever it holds travels inside it.
+   */
+  function heldIn(bin){
+    var flag=bin?"binned":"archived", away=[];
+    collections.filter(function(c){ return c[flag]; }).sort(byPlace).forEach(function(c){
+      var held=books.filter(function(b){ return b.collection===c.id; }).length;
+      away.push({kind:"collection",id:c.id,parent:"*",name:c.name,colour:c.colour,
+                 detail:"collection · "+count(held," book"," books")});
+    });
+    books.filter(function(b){ return b[flag]; }).sort(byPlace).forEach(function(b){
+      var held=pages.filter(function(p){ return p.book===b.id; }).length;
+      away.push({kind:"book",id:b.id,parent:b.collection,name:b.name,colour:b.colour,
+                 detail:"book in "+nameOf(b.collection)+" · "+count(held," note"," notes")});
+    });
+    pages.filter(function(p){ return p[flag] && !blank(p); }).sort(byPlace).forEach(function(p){
+      away.push({kind:"page",id:p.id,parent:p.book,name:heading(p),colour:p.colour,
+                 detail:"note in "+bookOf(p.book).name,page:p});
+    });
+    return away;
+  }
+
+  function holding(thing){ return thing.kind==="collection"?collections:thing.kind==="book"?books:pages; }
+  function find(thing){
+    var all=holding(thing);
+    for(var i=0;i<all.length;i++) if(all[i].id===thing.id) return all[i];
+    return null;
+  }
+
+  /**
+   * Nothing leaves in one tap. Archiving puts a thing away and deleting drops it in the bin; either way it
+   * is still there, holding whatever it held. Only the bin asks anything, and only because what it asks
+   * about cannot be undone.
+   */
+  function putAway(thing,bin){
+    var it=find(thing); if(!it) return;
+    it.archived=!bin; it.binned=!!bin;
+    if(open && thing.kind==="page" && open.id===thing.id){ var book=open.book; open=null; openShelves(book); return; }
+    if(trail && trail.length>1 && trail[trail.length-1].id===thing.id) trail=trail.slice(0,trail.length-1);
+    browse();
+  }
+  /** Back on the shelves, and so is whatever holds it, or it would be back nowhere. */
+  function putBack(thing){
+    var it=find(thing); if(!it) return;
+    it.archived=false; it.binned=false;
+    if(thing.kind==="page"){
+      var book=bookOf(it.book);
+      if(book){ book.archived=false; book.binned=false;
+        var of=find({kind:"collection",id:book.collection}); if(of){ of.archived=false; of.binned=false; } }
+    }
+    if(thing.kind==="book"){
+      var above=find({kind:"collection",id:it.collection}); if(above){ above.archived=false; above.binned=false; }
+    }
+    browse();
+  }
+  /** Gone for good: the thing, everything inside it, and every rule that pointed at any of it. */
+  function erase(thing){
+    if(thing.kind==="collection"){
+      books.filter(function(b){ return b.collection===thing.id; }).forEach(function(b){ erase({kind:"book",id:b.id}); });
+      collections=collections.filter(function(c){ return c.id!==thing.id; });
+    } else if(thing.kind==="book"){
+      pages=pages.filter(function(p){ return p.book!==thing.id; });
+      books=books.filter(function(b){ return b.id!==thing.id; });
+    } else pages=pages.filter(function(p){ return p.id!==thing.id; });
+    shares=shares.filter(function(rule){ return !(rule.scope===thing.kind && rule.target===thing.id); });
+  }
+
+  /**
+   * One thing on the shelves, drawn the way a phone draws an app: a square you can grab, with its name under
+   * it. A collection or a book is a bubble showing what is inside it; a page is a sheet of the paper it is
+   * written on. Tapping opens it, holding shows what can be done to it, and dragging moves it — onto another
+   * thing to put both in a new one, or between two to change the order.
+   */
+  function tile(thing){
+    var held=thing.kind==="collection"||thing.kind==="book";
+    var place=thing.kind==="archive"||thing.kind==="bin"||thing.kind==="inbox";
+    var one=el("button","tile"+(place?" place":""));
+    var face=el("div","face"+(place?" place":thing.kind==="page"?" paper":""));
+    if(thing.colour&&!place)
+      face.style.background=over(thing.colour,PAPERS[paperAt][thing.kind==="page"?0:4],weigh(thing.kind==="page"?0.14:0.22,toneAt,0.8));
+      // A wash has to stay light enough to be written on; the edge is the colour itself, so two things are
+      // told apart at a glance rather than by comparing tints.
+      face.style.border="3px solid "+tintOf(thing.colour);
+    if(held){
+      var pips=el("div","pips"), inside=parseInt(thing.detail,10)||0;
+      for(var at=0;at<4;at++) pips.appendChild(el("span",at<inside?"on":null));
+      face.appendChild(pips);
+    } else if(thing.kind==="page"){
+      var rules=el("div","rules");
+      for(var line=0;line<3;line++) rules.appendChild(el("i"));
+      face.appendChild(rules);
+    }
+    one.appendChild(face);
+    var name=el("b",null,thing.name);
+    nameable(name,thing);
+    one.appendChild(name);
+    if(!place){
+      var how=standing(thing,true);
+      if(how) one.appendChild(el("div","state"+(owing(thing)?" out":""),how));
+    }
+    one.setAttribute("aria-label",(place?thing.name+", "+thing.detail:(held?"Open ":"Open the note ")+thing.name));
+    one.onclick=function(){
+      if(one.dataset.held){ delete one.dataset.held; return; }
+      if(thing.kind==="inbox"){ note("Notes other people share with you will arrive here.\n\nSharing over Minima is not switched on yet, so nothing has arrived."); return; }
+      if(thing.kind==="page"){ showPad(thing.page); return; }
+      trail=trail.concat([{kind:thing.kind,id:thing.id,name:thing.name}]); browse();
+    };
+    if(!place) grab(one,thing);
+    return one;
+  }
+
+  function addRow(step){
+    var add=el("button","add","+   "+adding(step.kind));
+    add.onclick=function(){ addHere(step); };
+    return add;
+  }
+
+  /** The tile that adds another one, in the same square as everything else. */
+  /**
+   * The name under a tile, or on a card, is the name: tapping it turns it into the field it already looks
+   * like, and tapping away keeps what is in it. A note needs none of this — its first line is its name.
+   */
+  function nameable(shown,thing){
+    if(thing.kind!=="collection"&&thing.kind!=="book") return;
+    shown.title="Rename "+thing.name;
+    shown.onclick=function(ev){
+      ev.stopPropagation();
+      var typing=el("input","naming"); typing.value=thing.name;
+      shown.parentNode.replaceChild(typing,shown);
+      typing.focus(); typing.select();
+      function keep(){
+        var name=typing.value.trim();
+        if(name&&name!==thing.name){
+          var it=find(thing); if(it) it.name=name;
+          if(trail) trail.forEach(function(step){ if(step.id===thing.id) step.name=name; });
+        }
+        browse();
+      }
+      typing.onblur=keep;
+      typing.onkeydown=function(key){ if(key.key==="Enter") keep(); };
+    };
+  }
+
+  function addTile(step){
+    var add=el("button","tile");
+    var face=el("div","face add","+");
+    add.appendChild(face);
+    // The square says "+"; under it is only what it makes, the way the app has it.
+    add.appendChild(el("b",null,adding(step.kind).replace("New ","")));
+    add.setAttribute("aria-label",adding(step.kind));
+    add.onclick=function(){ addHere(step); };
+    return add;
+  }
+
+  /** The two ways a thing appears here: you make it, or somebody else sends it. */
+  function addHere(step){
+    var d=dialog();
+    d.box.appendChild(el("h3",null,adding(step.kind)));
+    var make=el("button","who");
+    make.appendChild(el("b",null,step.kind==="library"?"A new collection"
+      :step.kind==="collection"?"A new book":"A new note"));
+    make.onclick=function(){
+      d.scrim.remove();
+      if(step.kind==="book"){ showPad(fresh(step.id)); return; }
+      askName(step);
+    };
+    var theirs=el("button","who");
+    theirs.appendChild(el("b",null,"From someone else"));
+    theirs.onclick=function(){
+      d.scrim.remove();
+      note("On the phone this opens the camera, to scan their code - with Paste instead beside it for a "
+        +"line somebody sent you."+"\n\n"+"Whatever they share with you then arrives here on its own. Your "
+        +"own code, for them to do the same, is My code inside Share.");
+    };
+    d.box.appendChild(make); d.box.appendChild(theirs);
+  }
+
+  function card(thing){
+    var apart=thing.kind==="inbox"||thing.kind==="archive"||thing.kind==="bin";
+    var card=el("button","card"+(apart?" outline":""));
+    if(!apart&&tint(thing)) {
+      card.style.background=over(tint(thing),PAPERS[paperAt][4],weigh(0.20,toneAt,0.92));
+      card.style.border="3px solid "+tintOf(tint(thing));
+    }
+    var what=el("div","what");
+    what.appendChild(el("b",null,thing.name));
+    if(thing.detail) what.appendChild(el("span",null,thing.detail));
+    card.appendChild(what);
+    if(thing.kind==="archive"||thing.kind==="bin"){
+      card.onclick=function(){ trail=trail.concat([{kind:thing.kind,id:thing.id,name:thing.name}]); browse(); };
+      return card;
+    }
+    if(apart){
+      card.onclick=function(){ note("Notes other people share with you will arrive here.\n\nSharing over Minima is not switched on yet, so nothing has arrived."); };
+      return card;
+    }
+    card.onclick=function(){ trail=trail.concat([{kind:thing.kind,id:thing.id,name:thing.name}]); browse(); };
+    var how=standing(thing,false);
+    if(how) card.appendChild(el("div","state"+(owing(thing)?" out":""),how));
+    hold(card,thing);
+    return card;
+  }
+
+  /** A thing waiting in the archive or the bin. It is not a place to go into, so tapping it asks where to. */
+  function awayRow(thing,bin){
+    var row=el("div","row"); row.tabIndex=0; row.setAttribute("role","button");
+    row.setAttribute("aria-label",thing.name+", "+thing.detail);
+    if(tint(thing)) row.style.background=over(tint(thing),PAPERS[paperAt][0],weigh(0.16,toneAt,0.82));
+    var menu=el("div","menu");
+    var what=el("div","what");
+    what.appendChild(el("b",null,thing.name));
+    what.appendChild(el("span",null,thing.detail));
+    row.appendChild(what); row.appendChild(menu);
+    row.onclick=function(ev){
+      ev.stopPropagation();
+      popupMenu(menu,[[["Put back",function(){ putBack(thing); }],
+        bin?["Delete for good",function(){ askErase(thing); }]
+           :["Move to the bin",function(){ putAway(thing,true); }]]]);
+    };
+    return row;
+  }
+
+  function askErase(thing){
+    var d=dialog();
+    d.box.appendChild(el("h3",null,"Delete "+thing.name+" for good?"));
+    d.box.appendChild(el("p",null,thing.detail));
+    d.box.appendChild(el("p","plain","This cannot be undone. Anything inside it goes too."));
+    var actions=el("div","actions");
+    var go=el("button",null,"Delete for good");
+    go.onclick=function(){ erase(thing); d.scrim.remove(); browse(); };
+    actions.appendChild(go); d.box.appendChild(actions);
+  }
+
+  /** Taking a file out of a note deletes the copy the note was keeping, so it says so first. */
+  function askDropFile(file){
+    var d=dialog(function(){});
+    d.box.appendChild(el("h3",null,"Remove "+file.name+"?"));
+    d.box.appendChild(el("p",null,sizeOf(file.bytes)));
+    d.box.appendChild(el("p","plain","The copy this note is keeping is deleted. Whatever you attached it from is untouched."));
+    var actions=el("div","actions");
+    var go=el("button",null,"Remove");
+    go.onclick=function(){ kept=kept.filter(function(f){ return f!==file; }); d.scrim.remove(); showPad(open); };
+    actions.appendChild(go); d.box.appendChild(actions);
+  }
+
+  function askEmptyBin(){
+    var waiting=heldIn(true);
+    if(!waiting.length){ note("The bin is already empty"); return; }
+    var d=dialog();
+    d.box.appendChild(el("h3",null,"Empty the bin?"));
+    d.box.appendChild(el("p",null,count(waiting.length," thing"," things")+" in it, and whatever they hold, gone for good."));
+    d.box.appendChild(el("p","plain","This cannot be undone."));
+    var actions=el("div","actions");
+    var go=el("button",null,"Empty the bin");
+    go.onclick=function(){ waiting.forEach(erase); d.scrim.remove(); browse(); };
+    actions.appendChild(go); d.box.appendChild(actions);
+  }
+
+  function pageRow(thing){
+    var row=el("button","row");
+    if(tint(thing)) row.style.background=over(tint(thing),PAPERS[paperAt][0],weigh(0.16,toneAt,0.82));
+    var what=el("div","what");
+    what.appendChild(el("b",null,thing.name));
+    if(thing.detail) what.appendChild(el("span",null,thing.detail));
+    row.appendChild(what);
+    row.onclick=function(){ showPad(thing.page); };
+    var how=standing(thing,false);
+    if(how) row.appendChild(el("div","state"+(owing(thing)?" out":""),how));
+    hold(row,thing);
+    return row;
+  }
+
+  /**
+   * The mark for something an address has not been given yet. Nothing arrives because the reader wrote it;
+   * it arrives because this device sent it, so until it has, the line says so.
+   */
+  function waitingMark(behind){
+    var mark=el("div","waiting",behind>1?"↑ "+behind:"↑");
+    mark.setAttribute("aria-label",behind===1?"One note not sent yet":behind+" notes not sent yet");
+    return mark;
+  }
+
+  /** The level you are standing in, as the thing its menu is about. */
+  function standingIn(){
+    var step=here(), holds=inside(step);
+    var known=(step.kind==="collection"?collections:step.kind==="book"?books:[]).filter(function(t){ return t.id===step.id; })[0];
+    return {kind:step.kind,id:step.id,name:step.name,colour:known?known.colour:0,
+            parent:trail.length>1?trail[trail.length-2].id:"",holds:holds};
+  }
+
+  /**
+   * One menu, wherever you open it. It always says the same things in the same order: what the app is set
+   * to, then the colour of whatever you are standing in, then what can be done to that thing, then what can
+   * be done with its text, then the app itself. A menu that changes shape from screen to screen has to be
+   * read each time; this one is learnt once.
+   */
+  function menuFor(menu,thing){
+    var parameters=["ladder",["palette",thing],["tones",thing]];
+    var own;
+    // Nothing is shared from the top: who receives what is decided on a collection, a book or a note.
+    if(thing.kind==="library") own=[["Sync now",function(){ sendNow(thing); }]];
+    else if(thing.kind==="archive") own=[["Nothing to put away",function(){ note("Archive a collection, book or note from its own menu."); }]];
+    else if(thing.kind==="bin") own=[["Empty the bin",askEmptyBin]];
+    else own=thingItems(thing);
+    // A place is not a thing: what waits in the archive or the bin is not shared, copied out or sent on from
+    // here, and the bin is not shareable at all. Put something back first and it is a thing again.
+    var groups=[parameters,own];
+    if(thing.kind!=="archive"&&thing.kind!=="bin")
+      groups.push([["Send to another app",function(){ sendElsewhere(thing); }]]);
+    groups.push(appItems());
+    popupMenu(menu,groups);
+  }
+
+  /** Only a collection or a book is named this way; a page is named by writing its first line. */
+  function askRename(thing){
+    var input=el("input","field"); input.id="rename-to"; input.value=thing.name;
+    var d=dialog(function(){
+      var name=input.value.trim(); if(!name||name===thing.name) return;
+      if(thing.kind==="collection") collections.forEach(function(c){ if(c.id===thing.id) c.name=name; });
+      else if(thing.kind==="book") books.forEach(function(b){ if(b.id===thing.id) b.name=name; });
+      else pages.forEach(function(p){
+        if(p.id!==thing.id) return;
+        var all=p.text.replace(/^\n+/,"").split("\n"); all[0]=name; p.text=all.join("\n"); p.updated=Date.now();
+      });
+      trail.forEach(function(step){ if(step.id===thing.id) step.name=name; });
+      if(open&&open.id===thing.id) showPad(open); else browse();
+    });
+    d.box.appendChild(el("h3",null,"Rename"));
+    d.box.appendChild(input);
+    input.onkeydown=function(ev){ if(ev.key==="Enter") d.scrim.click(); };
+    input.focus(); input.select();
+  }
+
+  /**
+   * Press and hold to lift a line, then move it into the place you want among the lines beside it, exactly
+   * as a long press does on the phone. Holding means only that: a line opens on a tap and moves on a hold,
+   * and moving something into a different book or collection stays in the menu.
+   */
+  var held=null;
+
+  /**
+   * A phone's own desktop: hold a thing and what can be done to it comes up beside it; keep moving and you
+   * have picked it up instead. Both come out of the same press, told apart by whether the finger stayed still.
+   */
+  function grab(tile,thing){
+    tile.dataset.id=thing.id; tile.dataset.kind=thing.kind;
+    var timer=null, up=false, from=null;
+    tile.addEventListener("pointerdown",function(ev){
+      if(ev.button) return;
+      from={x:ev.clientX,y:ev.clientY}; up=false;
+      timer=setTimeout(function(){
+        if(up) return;
+        tile.dataset.held="1";
+        var menu=el("div","menu"); tile.appendChild(menu);
+        menuFor(menu,thing);
+      },450);
+      function moved(move){
+        if(!from||held) return;
+        if(Math.max(Math.abs(move.clientX-from.x),Math.abs(move.clientY-from.y))<8) return;
+        clearTimeout(timer);
+        tile.dataset.held="1";
+        var open=phone.querySelector(".popup"); if(open) open.remove();
+        lift(tile,thing);
+      }
+      function done(){
+        up=true; clearTimeout(timer);
+        document.removeEventListener("pointermove",moved);
+        document.removeEventListener("pointerup",done);
+      }
+      document.addEventListener("pointermove",moved);
+      document.addEventListener("pointerup",done);
+    });
+  }
+
+  function hold(view,thing){
+    view.dataset.id=thing.id; view.dataset.kind=thing.kind;
+    var timer=null;
+    view.addEventListener("pointerdown",function(ev){
+      if(ev.button) return;
+      timer=setTimeout(function(){ lift(view,thing); },450);
+      function stop(){ clearTimeout(timer); document.removeEventListener("pointerup",stop); }
+      document.addEventListener("pointerup",stop);
+    });
+  }
+  function lift(view,thing){
+    held={view:view,thing:thing,list:view.parentNode,onto:null};
+    view.classList.add("lifted");
+    document.addEventListener("pointermove",follow);
+    document.addEventListener("pointerup",letGo);
+  }
+
+  /** Whichever thing the finger is over the middle of, if it is one this one could go together with. */
+  function under(ev){
+    var found=null;
+    orderable(held.list).forEach(function(row){
+      if(row===held.view||row.dataset.kind!==held.thing.kind||held.thing.kind==="collection") return;
+      var box=row.getBoundingClientRect();
+      if(ev.clientX>box.left+box.width*0.2&&ev.clientX<box.right-box.width*0.2
+        &&ev.clientY>box.top+box.height*0.15&&ev.clientY<box.top+box.height*0.7) found=row;
+    });
+    return found;
+  }
+  function markOnto(row){
+    if(held.onto===row) return;
+    if(held.onto) held.onto.classList.remove("onto");
+    held.onto=row;
+    if(row) row.classList.add("onto");
+  }
+  function orderable(list){
+    return [].slice.call(list.children).filter(function(row){ return row.dataset && row.dataset.id; });
+  }
+  /** The lifted line moves to where the pointer is, so the level always shows the order it would keep. */
+  function follow(ev){
+    if(!held) return;
+    var rows=orderable(held.list), mine=rows.indexOf(held.view), want=0;
+    if(held.list.className==="desk"){
+      markOnto(under(ev));
+      if(held.onto) return;
+      rows.forEach(function(row,at){
+        if(at===mine) return;
+        var box=row.getBoundingClientRect(), middleY=box.top+box.height/2;
+        // Reading order: everything on the rows above, then everything to the left of it on its own row.
+        if(ev.clientY>middleY+box.height/2) want++;
+        else if(ev.clientY>=middleY-box.height/2&&ev.clientX>box.left+box.width/2) want++;
+      });
+      if(want===mine) return;
+      var others=rows.filter(function(row){ return row!==held.view; });
+      held.list.removeChild(held.view);
+      held.list.insertBefore(held.view,want<others.length?others[want]:others[others.length-1].nextSibling);
+      return;
+    }
+    rows.forEach(function(row,at){
+      var box=row.getBoundingClientRect();
+      if(at!==mine && ev.clientY>box.top+box.height/2) want++;
+    });
+    if(want===mine) return;
+    var others=rows.filter(function(row){ return row!==held.view; });
+    held.list.removeChild(held.view);
+    held.list.insertBefore(held.view,want<others.length?others[want]:others[others.length-1].nextSibling);
+  }
+  /** What the level looks like now is what it is: every line keeps the place it was let go in. */
+  function letGo(){
+    if(!held) return;
+    var kind=held.thing.kind, ids=orderable(held.list).map(function(row){ return row.dataset.id; });
+    held.view.classList.remove("lifted");
+    document.removeEventListener("pointermove",follow);
+    document.removeEventListener("pointerup",letGo);
+    if(held.onto){
+      var two=held.onto; two.classList.remove("onto");
+      var one=held.thing, other={kind:two.dataset.kind,id:two.dataset.id};
+      held=null;
+      combine(one,other);
+      return;
+    }
+    held=null;
+    var all=kind==="collection"?collections:kind==="book"?books:pages;
+    ids.forEach(function(id,at){ all.forEach(function(thing){ if(thing.id===id) thing.place=at; }); });
+    browse();
+  }
+
+  /**
+   * Two things dropped together become one that holds them both, one level up: two pages make a book, two
+   * books make a collection. It is the desktop's own gesture, and the only way to make a container without
+   * naming it first — so the name is asked for straight afterwards, with the thing already made.
+   */
+  function combine(one,two){
+    var both=[one,two].map(function(t){ return find(t)||t; });
+    if(one.id===two.id) return;
+    var pages=one.kind==="page";
+    var collection=pages?(trail.length>1?trail[trail.length-2].id:""):"";
+    var gained={}, lost={};
+    both.forEach(function(thing){
+      var before,after;
+      if(pages){ before=audience(collection,thing.book,thing.id); after=audience(collection,"",thing.id); }
+      else { before=audience(thing.collection,thing.id,""); after=audience("",thing.id,""); }
+      Object.keys(after).forEach(function(a){ if(!(a in before)) gained[a]=after[a]; });
+      Object.keys(before).forEach(function(a){ if(!(a in after)) lost[a]=before[a]; });
+    });
+    function make(){
+      var id=(pages?"b":"c")+(nextId++);
+      if(pages){
+        books.push({id:id,collection:collection,name:"New book",place:-Date.now()});
+        both.forEach(function(p){ p.book=id; p.place=-Date.now(); });
+        trail=trail.slice(0,trail.length-1).concat([{kind:"book",id:id,name:"New book"}]);
+      } else {
+        collections.push({id:id,name:"New collection",place:-Date.now()});
+        both.forEach(function(b){ b.collection=id; b.place=-Date.now(); });
+        trail=[{kind:"library",id:"*",name:"All collections"},{kind:"collection",id:id,name:"New collection"}];
+      }
+      browse();
+      askRename({kind:pages?"book":"collection",id:id,name:pages?"New book":"New collection"});
+    }
+    if(!Object.keys(gained).length&&!Object.keys(lost).length){ make(); return; }
+    var said="Putting \""+both[0].name+"\" and \""+(both[1].name||heading(both[1]))+"\" together changes who receives them.\n";
+    if(Object.keys(gained).length){ said+="\nStarts reaching:";
+      Object.keys(gained).forEach(function(a){ said+="\n  • "+named(a,gained[a]); }); }
+    if(Object.keys(lost).length){ said+="\nStops reaching:";
+      Object.keys(lost).forEach(function(a){ said+="\n  • "+named(a,lost[a]); }); }
+    said+="\n\nNothing is sent yet, so this changes who would receive them once sharing is switched on.";
+    confirmDialog("This changes who can read them",said,"Put them together",make);
+  }
+
+  function carryBar(){
+    var says=el("div","carry");
+    var words=el("div","what");
+    words.appendChild(el("b",null,"Moving "+carrying.name));
+    words.appendChild(el("span",null,carrying.kind==="page"?"Tap the book to move it into.":"Tap the collection to move it into."));
+    says.appendChild(words);
+    return says;
+  }
+
+  function places(){
+    if(carrying.kind==="page")
+      return books.filter(onShelves).map(function(b){ return {kind:"book",id:b.id,parent:b.collection,name:b.name,detail:"in "+nameOf(b.collection)}; });
+    return collections.filter(onShelves).map(function(c){
+      var held=books.filter(function(b){ return b.collection===c.id && onShelves(b); }).length;
+      return {kind:"collection",id:c.id,parent:"*",name:c.name,detail:count(held," book"," books")};
+    });
+  }
+
+  function destination(place){
+    var itself=place.id===carrying.parent;
+    var card=el("button","card"+(itself?" here":" outline"));
+    var what=el("div","what");
+    what.appendChild(el("b",null,place.name));
+    what.appendChild(el("span",null,itself?"where it is now":place.detail));
+    card.appendChild(what);
+    if(!itself) card.onclick=function(){ putDown(place); };
+    return card;
+  }
+
+  /** Works out what the move would do to the audience before anything changes. */
+  function audience(collection,book,page){
+    var reached={};
+    shares.forEach(function(rule){
+      var covers=rule.scope==="library"||(rule.scope==="collection"&&rule.target===collection)
+        ||(rule.scope==="book"&&rule.target===book)||(rule.scope==="page"&&rule.target===page);
+      if(covers) reached[rule.address]=rule.mine||reached[rule.address]===true;
+    });
+    return reached;
+  }
+  /**
+   * Where a thing stands: on this device alone, going to your own devices, going to somebody else, or having
+   * come from somebody else. Said on the thing itself, because the one moment it matters is the moment you
+   * are looking at it. Reaching somebody else outranks reaching your own devices.
+   */
+  /**
+   * Where a thing stands and whether it is up to date, in words rather than in marks: a symbol has to be
+   * learnt and then remembered, where "Shared · 2 waiting" is read once. A thing that is only on this phone
+   * says nothing — that is what everything is until it is shared.
+   */
+  function standing(thing,brief){
+    var owed=owing(thing);
+    if(thing.theirs) return brief?"From them":"Shared with you";
+    var reaches=whoReaches(thing), addresses=Object.keys(reaches);
+    if(!addresses.length) return null;
+    var others=addresses.filter(function(a){ return !reaches[a]; }).length;
+    var where=others?"Shared":"My devices";
+    if(brief) return owed?where+" · "+owed:where;
+    return owed?where+" · "+owed+" waiting":where+" · up to date";
+  }
+  function whoReaches(thing){
+    if(thing.kind==="collection") return audience(thing.id,"","");
+    if(thing.kind==="book") return audience(thing.collection||thing.parent,thing.id,"");
+    if(thing.kind==="page"){
+      var book=bookOf(thing.parent||thing.book);
+      return audience(book?book.collection:"",thing.parent||thing.book,thing.id);
+    }
+    return {};
+  }
+
+  function named(address,mine){
+    var found=addresses.filter(function(a){ return a.address===address; })[0];
+    return (found?found.name:address)+(mine?" (your device)":" (someone else)");
+  }
+  function putDown(place){
+    var moved=carrying;
+    if(place.id===moved.parent){ carrying=null; browse(); return; }
+    var before,after;
+    if(moved.kind==="page"){
+      before=audience(bookOf(moved.parent).collection,moved.parent,moved.id);
+      after=audience(bookOf(place.id).collection,place.id,moved.id);
+    } else {
+      before=audience(moved.parent,moved.id,"");
+      after=audience(place.id,moved.id,"");
+    }
+    var gained=Object.keys(after).filter(function(a){ return !(a in before); });
+    var lost=Object.keys(before).filter(function(a){ return !(a in after); });
+    if(!gained.length&&!lost.length){ commit(moved,place); return; }
+    var said="Moving \""+moved.name+"\" into "+place.name+" changes who receives it.\n";
+    if(gained.length){ said+="\nStarts reaching:"; gained.forEach(function(a){ said+="\n  • "+named(a,after[a]); }); }
+    if(lost.length){ said+="\nStops reaching:"; lost.forEach(function(a){ said+="\n  • "+named(a,before[a]); }); }
+    said+="\n\nNothing is sent yet, so this changes who would receive it once sharing is switched on.";
+    confirmDialog("This changes who can read it",said,"Move anyway",function(){ commit(moved,place); });
+  }
+  /**
+   * Moving something ends where it landed, not where you happened to be standing: being returned to a level
+   * the thing is no longer in is what makes a move that worked look like one that did not.
+   */
+  function commit(moved,place){
+    if(moved.kind==="page") pages.forEach(function(p){ if(p.id===moved.id){ p.book=place.id; p.updated=Date.now(); p.place=-Date.now(); } });
+    else books.forEach(function(b){ if(b.id===moved.id){ b.collection=place.id; b.place=-Date.now(); } });
+    carrying=null;
+    if(moved.kind==="page") openShelves(place.id);
+    else {
+      trail=[{kind:"library",id:"*",name:"All collections"},
+             {kind:"collection",id:place.id,name:nameOf(place.id)}];
+      browse();
+    }
+  }
+
+  // ---- dialogs -------------------------------------------------------------------------------------
+  function dialog(onClose){
+    var scrim=el("div","scrim"); var box=el("div","dialog");
+    box.onclick=function(ev){ ev.stopPropagation(); };
+    scrim.onclick=function(){ scrim.remove(); if(onClose) onClose(); };
+    scrim.appendChild(box); phone.appendChild(scrim);
+    return {scrim:scrim,box:box};
+  }
+  function confirmDialog(title,words,yes,then){
+    var d=dialog(function(){ carrying=null; browse(); });
+    d.box.appendChild(el("h3",null,title));
+    d.box.appendChild(el("p","plain",words));
+    var actions=el("div","actions");
+    var go=el("button",null,yes); go.onclick=function(){ d.scrim.remove(); then(); };
+    actions.appendChild(go); d.box.appendChild(actions);
+  }
+  function askName(step){
+    var input=el("input","field"); input.id="new-name";
+    input.placeholder=step.kind==="library"?"Collection name":"Book name";
+    var d=dialog(function(){
+      var name=input.value.trim(); if(!name) return;
+      if(step.kind==="library") collections.push({id:"c"+(nextId++),name:name,place:-Date.now()});
+      else books.push({id:"b"+(nextId++),collection:step.id,name:name,place:-Date.now()});
+      browse();
+    });
+    d.box.appendChild(el("h3",null,step.kind==="library"?"New collection":"New book in "+step.name));
+    input.placeholder=step.kind==="library"?"Name this collection":"Name this book";
+    d.box.appendChild(input);
+    d.box.appendChild(el("p","plain","Tap away to keep it."));
+    input.onkeydown=function(ev){ if(ev.key==="Enter") d.scrim.click(); };
+    input.focus();
+  }
+  function describe(scope,name){
+    if(scope==="library") return "every collection, book and note";
+    if(scope==="collection") return "the collection "+name+", and every book in it";
+    if(scope==="book") return "the book "+name+", and every note in it";
+    return "this note";
+  }
+  function shareSheet(scope,target,name){
+    var d=dialog();
+    d.box.appendChild(el("h3",null,"Share"));
+    // On the phone this box is the code itself, and the line under it says what the code is offering and
+    // what the other side may do with it. Tapping that line is how the level is set, before it is held up.
+    d.box.appendChild(el("p",null,"On the phone: your code, to hold up to their phone."+"\n\n"
+      +"Under it, what the code is offering - "+describe(scope,name)+" - and what they can do with it. "
+      +"Read only unless you tap it and say read and write. The code carries the level, so their phone "
+      +"names the thing and the level before anything is saved."));
+    var on=sharedOn(scope,target);
+    if(!on.length) d.box.appendChild(el("p","plain","Not shared with anyone yet."));
+    on.forEach(function(rule){
+      var who=el("button","who");
+      who.appendChild(el("b",null,rule.address));
+      who.appendChild(el("span",null,rule.mine?"Another device of mine · both ways":"Someone else · receives my changes"));
+      who.onclick=function(){
+        if(!window.confirm("Stop sharing?\n\n"+rule.address)) return;
+        shares=shares.filter(function(s){ return s!==rule; }); d.scrim.remove(); shareSheet(scope,target,name);
+      };
+      d.box.appendChild(who);
+    });
+    var pending=el("p",null,"Nothing is sent yet. This records who receives it once sharing over Minima is switched on. Files kept with a note stay on this device: sharing will carry the writing first.");
+    pending.style.marginTop="18px"; d.box.appendChild(pending);
+    var actions=el("div","actions");
+    var add=el("button",null,"Shared with"); add.onclick=function(){ d.scrim.remove(); pickAddress(scope,target,name); };
+    actions.appendChild(add); d.box.appendChild(actions);
+  }
+  function pickAddress(scope,target,name){
+    var d=dialog();
+    d.box.appendChild(el("h3",null,"Share with"));
+    addresses.forEach(function(contact){
+      var who=el("button","who");
+      who.appendChild(el("b",null,contact.name));
+      who.appendChild(el("span",null,contact.mine?"Another device of mine":"Someone else"));
+      who.onclick=function(){
+        shares.push({scope:scope,target:target,address:contact.address,mine:contact.mine});
+        d.scrim.remove(); shareSheet(scope,target,name);
+      };
+      d.box.appendChild(who);
+    });
+    var actions=el("div","actions");
+    var neu=el("button",null,"New address"); neu.onclick=function(){ d.scrim.remove(); typeAddress(scope,target,name); };
+    actions.appendChild(neu); d.box.appendChild(actions);
+  }
+  function typeAddress(scope,target,name){
+    var d=dialog();
+    d.box.appendChild(el("h3",null,"New address"));
+    d.box.appendChild(el("p",null,"Paste the Minima address and say whose it is."));
+    var who=el("input","field"); who.id="who-name"; who.placeholder="Name, such as My tablet";
+    var address=el("input","field"); address.id="who-address"; address.placeholder="Minima address";
+    d.box.appendChild(who); d.box.appendChild(address);
+    function keep(mine){
+      var typed=address.value.trim();
+      if(typed.length<8||typed.indexOf(" ")>=0){ note("That does not look like a Minima address. Paste the whole address."); return; }
+      addresses.push({address:typed,name:who.value.trim()||(mine?"My device":"Contact"),mine:mine});
+      shares.push({scope:scope,target:target,address:typed,mine:mine});
+      d.scrim.remove(); shareSheet(scope,target,name);
+    }
+    var actions=el("div","actions");
+    var other=el("button",null,"Someone else"); other.onclick=function(){ keep(false); };
+    var mine=el("button",null,"My device"); mine.onclick=function(){ keep(true); };
+    actions.appendChild(other); actions.appendChild(mine);
+    d.box.appendChild(actions);
+    who.focus();
+  }
+  /**
+   * One menu in the bar: what this thing is, then the app itself, with a line between them. Two marks side
+   * by side for two menus was one mark too many.
+   */
+  function popupMenu(menu,groups){
+    var shown=menu.querySelector(".popup");
+    if(shown){ shown.remove(); return; }
+    menuMarks=[];
+    var popup=el("div","popup");
+    groups.forEach(function(group,at){
+      if(at) popup.appendChild(el("div","line"));
+      group.forEach(function(item){
+        if(item==="ladder"){ popup.appendChild(ladder()); return; }
+        if(item[0]==="palette"){ var row=palette(item[1]); if(row)popup.appendChild(row); return; }
+        if(item[0]==="tones"){ popup.appendChild(tones(item[1])); return; }
+        var b=el("button",null,item[0]);
+        b.onclick=function(){ popup.remove(); item[1](); };
+        popup.appendChild(b);
+      });
+    });
+    menu.appendChild(popup);
+  }
+
+  function appItems(){
+    return [
+      [cards?"Show as a list":"Show as cards",function(){ cards=!cards; browse(); }],
+      ["Backup",function(){ note("One file holding every collection, book, note and attachment.\n\nExport writes it through the system file picker. Import asks whether to add to what is here or replace it."); }],
+      ["Node settings",function(){ note("Where the chain stops, said as a list: Core installed, Mininotes enabled in Core, this device's Maxima address, somewhere to send to, and that device's keys.\n\nWho this phone can reach lives here too — "+addresses.map(function(a){ return a.name+" — "+(a.mine?"my device":"someone else"); }).join(", ")+" — because it is the same subject.\n\nSending is not built yet. Core refuses every request until Mininotes is switched on in Core → Apps."); }],
+      // One archive and one bin for the whole pad, near the foot: where you go looking afterwards.
+      ["Open the archive",function(){ trail.push({kind:"archive",id:"archive",name:"Archive"}); browse(); }],
+      ["Open the bin",function(){ trail.push({kind:"bin",id:"bin",name:"Bin"}); browse(); }],
+      ["About",function(){ note("Mininotes v0.0.20\n\nFree to use, change and pass on. Not to be sold, or put inside anything sold.\n\nNotes are stored unencrypted on this phone. Sharing is recorded but nothing is sent yet."); }]
+    ];
+  }
+
+  /** Renaming, moving, sharing, putting away and getting rid of one thing, wherever you are standing in it. */
+  function thingItems(thing){
+    // Nothing here renames anything: a note is named by its first line, and a collection or a book by its
+    // own name where it is written, under its tile or on its card.
+    var items=[];
+    if(thing.kind==="page") items.push(["Versions",function(){ versions(thing); }]);
+    if(thing.kind==="page"||thing.kind==="book") items.push(["Move somewhere else",function(){ carrying=thing; browse(); }]);
+    items.push(["Share",function(){ shareSheet(thing.kind,thing.id,thing.name); }]);
+    items.push(["Sync now",function(){ sendNow(thing); }]);
+    items.push(["Archive",function(){ putAway(thing,false); }]);
+    items.push(["Delete",function(){ putAway(thing,true); }]);
+    return items;
+  }
+  document.addEventListener("click",function(){
+    var p=phone.querySelector(".popup"); if(!p) return;
+    p.remove();
+    if(painted){ painted=false; if(trail) browse(); }
+  });
+  document.addEventListener("keydown",function(ev){
+    if(ev.key!=="Escape"||!trail) return;
+    if(carrying){ carrying=null; browse(); return; }
+    if(trail.length>1){ trail=trail.slice(0,trail.length-1); browse(); return; }
+    backToWriting();
+  });
+
+  // However empty the pad is, the app opens on something to write on, on the paper it was left on.
+  usePaper(paperAt);
+  if(window.matchMedia) {
+    var watching=window.matchMedia("(prefers-color-scheme: dark)");
+    var followed=function(){ usePaper(paperNow()); washPage(); if(open) showPad(open); else browse(); };
+    if(watching.addEventListener) watching.addEventListener("change",followed); else watching.addListener(followed);
+  }
+  showPad(newest()||fresh(somewhereToWrite()));
+})();
+</script>
+
+
+</body>
+</html>

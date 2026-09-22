@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>Mininotes — a little space to think</title><link rel="icon" href="icon.svg"><link rel="stylesheet" href="styles.css"></head>
+<body>
+<aside class="sidebar">
+  <a class="brand" href="./"><img src="icon.svg" alt="">mininotes<span>•</span></a>
+  <div class="workspace-label">YOUR PERSONAL SPACE</div>
+  <button class="new-note primary" id="new-note"><span>＋</span> New note <kbd>N</kbd></button>
+  <nav aria-label="Notebook views">
+    <button data-view="all" class="nav-item active"><span>▤</span> All notes <b id="all-count">0</b></button>
+    <button data-view="pinned" class="nav-item"><span>☆</span> Pinned</button>
+    <button data-view="inbox" class="nav-item"><span>↙</span> Maxima inbox <b id="inbox-count">0</b></button>
+    <button data-view="trash" class="nav-item"><span>♧</span> Trash</button>
+  </nav>
+  <div class="workspace-label tag-label">NOTEBOOKS</div><div id="tags"></div>
+  <div class="sidebar-bottom"><div class="quiet-card"><span class="leaf">✳</span><strong>A little space to think.</strong><p>Your thoughts, on your terms.</p></div>
+  <button id="export" class="utility">↗ Export backup</button><button id="import" class="utility">↙ Import backup</button><input id="import-file" type="file" accept="application/json,.json" hidden>
+  <div class="connection"><i></i><span id="connection">Opening notebook…</span></div><small>Mininotes · v0.1.0</small></div>
+</aside>
+<main>
+  <header><div><span class="eyebrow">COLLECT A THOUGHT. MAKE IT YOURS.</span><h1 id="view-title">All notes<span>.</span></h1><p id="view-description">Ideas, everyday moments, and everything in between.</p></div><span class="header-mark">a notebook<br>of your own <span>↘</span></span></header>
+  <div class="toolbar"><label class="search"><span>⌕</span><input id="search" type="search" placeholder="Find a thought…" aria-label="Search notes"><kbd>/</kbd></label><select id="sort" aria-label="Sort notes"><option value="updated">Last edited</option><option value="title">Title A–Z</option></select><span id="result-count"></span></div>
+  <div id="notice" role="status" aria-live="polite"></div>
+  <section id="notes" class="notes-grid" aria-label="Notes"></section>
+  <div id="empty" class="empty" hidden><div>✳</div><h2>A blank page. A fresh possibility.</h2><p>Give that thought somewhere to live.</p><button class="primary" id="empty-new">Write your first note <span>↗</span></button></div>
+  <footer><span>Room for whatever is on your mind.</span><span>LOCAL FIRST. ALWAYS YOURS.</span></footer>
+</main>
+<dialog id="editor"><form method="dialog" class="editor-top"><span id="save-status" role="status">Saved</span><button id="close-editor" type="button" aria-label="Close note">✕</button></form><div class="editor-content"><input id="note-title" maxlength="160" placeholder="Untitled thought" aria-label="Note title"><label class="tag-field">Notebook <input id="note-tag" maxlength="40" placeholder="Personal" aria-label="Notebook"></label><textarea id="note-body" maxlength="24000" placeholder="Start anywhere. This space is yours." aria-label="Note content"></textarea></div><div class="editor-bottom"><span id="word-count">0 words</span><button id="retry-save">Save now</button><button id="pin">☆ Pin</button><button id="trash">Move to trash</button><button id="share" class="primary">Share via Maxima ↗</button></div></dialog>
+<dialog id="share-dialog"><h2>Send a little thought.</h2><p>Share a copy with a Maxima contact. They need Mininotes installed to receive it.</p><label>Send to <select id="contacts"></select></label><p class="fine-print">This sends the title, notebook, and full note text. Later edits stay private. Transport acceptance does not confirm the recipient has read or saved it.</p><div class="dialog-actions"><button id="cancel-share">Cancel</button><button id="send" class="primary">Send copy ↗</button></div><p id="share-status" role="status"></p></dialog>
+<script src="mds.js"></script><script src="core.js"></script><script src="storage.js"></script><script src="app.js"></script>
+</body></html>

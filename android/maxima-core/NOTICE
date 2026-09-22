@@ -1,0 +1,12 @@
+This directory is the core/src/main tree of https://github.com/eurobuddha/maxima
+at commit 6e001754428623b891bc582b05fe505c1f96f37c, unmodified (88 files, checked
+byte for byte against that commit on 2026-09-22).
+
+It is the work of that repository's author and is redistributed inside Mininotes
+with their permission, given on 2026-09-22, and credited to them. The Mininotes
+LICENSE does not apply to it and puts no condition on it. The maxima repository
+declares no licence of its own: to use the Maxima transport in your own work, go
+to that repository and its author, as this project did.
+
+Mininotes' own record of this - what was asked, what was answered, and when - is
+in NOTICE and docs/MAXIMA-TRANSPORT.md at the root of the repository.

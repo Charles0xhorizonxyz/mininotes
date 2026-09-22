@@ -1,0 +1,13 @@
+node_modules/
+test-results/
+android/.gradle/
+android/**/build/
+android/local.properties
+*.jks
+*.keystore
+
+# Built artefacts belong on a release, not in the tree. The one exception is the
+# line the app reads to know whether it is behind.
+dist/*
+!dist/latest.txt
+keystore.properties

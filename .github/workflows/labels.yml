@@ -1,0 +1,35 @@
+name: Labels
+
+# The labels the feedback form files things under. A label an issue form asks for
+# but the repository does not have is silently dropped, which would leave every
+# report unfiled and the whole lot unfindable — so they are created here rather
+# than by hand, once, and can be re-run whenever one is renamed away by accident.
+#
+# Run it from the Actions tab. No third-party action: gh is on the runner and the
+# token it uses is the repository's own.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  labels:
+    name: Create the labels the feedback form needs
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Make them, or leave them as they are
+        run: |
+          set -euo pipefail
+          make() {
+            gh label create "$1" --color "$2" --description "$3" --force
+          }
+          make feedback   "0e8a16" "Said through the app's Feedback box, or in its shape."
+          make bug        "d73a4a" "Something is broken."
+          make confusing  "fbca04" "Something is confusing."
+          make idea       "1d76db" "Something the app should do that it does not."
+          make missing    "5319e7" "Something that ought to be there and is not."

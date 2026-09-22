@@ -1,0 +1,1 @@
+mds.js: Minima MDS JavaScript library 2.1.0. Unmodified from minima-global/Minima commit 52542f25605a28a776e9b3b43b0808a05dceab01. Apache-2.0; see MINIMA-LICENSE.txt. Source: https://github.com/minima-global/Minima

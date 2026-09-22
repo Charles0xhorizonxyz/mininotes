@@ -1,0 +1,12 @@
+const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
+const {zipSync,unzipSync,strToU8}=require('fflate');
+const root=path.resolve(__dirname,'..'),app=path.join(root,'app');
+const files=['dapp.conf','index.html','icon.svg','mds.js','core.js','storage.js','app.js','styles.css','service.js','MINIMA-LICENSE.txt','THIRD-PARTY.txt'];
+const conf=JSON.parse(fs.readFileSync(path.join(app,'dapp.conf'),'utf8'));
+if(!files.includes(conf.icon)||conf.version!==require('../package.json').version)throw Error('Package metadata mismatch');
+const entries={};for(const name of files)entries[name]=[new Uint8Array(fs.readFileSync(path.join(app,name))),{mtime:new Date('2026-01-01T00:00:00Z')}];
+const zip=zipSync(entries,{level:9}),opened=unzipSync(zip);
+if(Object.keys(opened).join('|')!==files.join('|')||JSON.parse(Buffer.from(opened['dapp.conf']).toString()).version!==conf.version)throw Error('Archive check failed');
+const out=path.join(root,'dist');fs.mkdirSync(out,{recursive:true});const filename=`Mininotes-${conf.version}.mds.zip`;fs.writeFileSync(path.join(out,filename),zip);
+const hash=crypto.createHash('sha256').update(zip).digest('hex');fs.writeFileSync(path.join(out,filename+'.sha256'),`${hash}  ${filename}\n`);
+console.log(`${filename} · ${zip.length} bytes\nSHA-256 ${hash}\nVerified ${files.length} archive entries; dapp.conf first.`);
