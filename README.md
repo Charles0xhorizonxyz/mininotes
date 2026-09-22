@@ -1,12 +1,23 @@
 # Mininotes
 
-A paper pad on your phone. It opens on a ruled page with the cursor already in
-it, keeps what you write the moment you write it, and works with no account, no
-server and no connection.
+A paper pad on your phone that can hold the same note as another phone — yours,
+or somebody else's — with no server, no account, and nobody in between who can
+read it.
 
-When you want a note on more than one phone — yours, or somebody else's — it
-goes over [Minima](https://minima.global)'s Maxima messaging, sealed end to end.
-That part is optional. Nothing about the pad needs it.
+**Sharing is what it is for.** A note you share goes over **Maxima**, the
+messaging layer of the [Minima](https://minima.global) network: the Maxima node
+inside the app seals the note and hands it to a public relay of the Minima
+network, which passes it to the other phone's node. It travels phone to phone,
+sealed end to end, and it arrives while the pad is closed. Who may read, write
+or hand a thing on works the way it does in Google Drive; when two people write
+in the same note before either has seen the other, the two are merged line by
+line and nothing either of them wrote is lost.
+
+There is nothing else to install — the Maxima node is inside the app. What it
+does need is the Minima network: its public relay nodes are what carry a note
+from one phone to the other, so where none can be reached, nothing goes. On its
+own, the pad still works: it opens on a ruled page with the cursor already in
+it, keeps what you write the moment you write it, and needs no connection at all.
 
 [![Latest release](https://img.shields.io/github/v/release/Charles0xhorizonxyz/mininotes?label=latest%20build)](https://github.com/Charles0xhorizonxyz/mininotes/releases/latest)
 
@@ -38,27 +49,37 @@ reads one line of text from this repository, once a day when the pad is opened
 and whenever you tap for it. Nothing is sent with it, nothing is downloaded and
 nothing is installed; **⋮ → About** has the switch that turns the daily look off.
 
-### Sharing between phones (optional)
+### Sharing between phones
 
-Nothing else has to be installed. The pad is its own Maxima node: the transport
-is built into the app.
+Nothing else has to be installed: the pad is its own Maxima node. It needs the
+network, and the first time it takes a few seconds to find a relay. **⋮ →
+Profile → Connection** says *Connected* once it has, and says what to do if it
+has not.
 
-1. On each phone, **⋮ → Profile**. Under **THE NODE** every step says done or not
-   done, and the first one that is not done says what to do about it. *It has a
-   Maxima address* takes a few seconds the first time, while a relay is found.
-2. Share something: open a collection, a book or a note, **⋮ → Share**, and the
-   phone shows a code offering that thing.
-3. On the other phone, tap **+** on the shelves, choose **From another device**,
-   and point it at the code. The first phone asks whether to give it to them.
-   Say yes and it is sent.
+1. **Show a code.** Open the collection, book or note, tap the ring in its bar
+   (or **⋮ → Sharing**), then **Share → Show them my code**. *Read only* or
+   *Read & write* is chosen on the code itself.
+2. **Scan it** on the other phone: **+** on the shelves → **From another
+   device** — or just point the phone's own camera at it; the code is a
+   `mininotes://` link and the camera offers to open it. Accept. A strip at the
+   foot of the screen says what is happening — saving, finding the other phone,
+   telling it — until the thing arrives.
+3. The first phone asks whether to give it to them. Say yes and it is sent.
 4. From then on it keeps itself up to date: what you write goes a few seconds
-   after you stop writing, and what they write comes back and is merged.
-   **⋮ → Shared with** on any thing says who has it and what each of them may
-   do — reads, reads & writes, or admin.
+   after you stop, and what they write comes back and is merged. The ring on
+   every thing says where it stands: empty for *only on this phone*, a tick for
+   *up to date*, an arrow for *waiting to send* — tap it to sync now — and two
+   bars for *paused*.
+
+Tap the ring on anything shared and one box says it all. **Who has access**: a
+role beside each person — Owner, Admin, Can write, Can read — which the owner
+or an admin changes from a drop-down, and **Add someone**. **Syncing**: *Sync
+automatically* and its delay, *Sync now*, *Pause receiving*, and **Unfollow**
+for anyone but the owner, which tells the others.
 
 Once a phone is paired with anything, the pad goes on listening after it is
 closed. Android shows a notification for as long as that lasts. **⋮ → Profile →
-Listens while the pad is closed** switches it off, and so does **Stop listening**
+Listen while the pad is closed** switches it off, and so does **Stop listening**
 on the notification. It hears while the phone is awake or charging; once Android
 puts the phone into its deep sleep the network is cut for every app that has not
 been exempted from battery optimisation, and Mininotes does not ask to be. What
@@ -80,6 +101,9 @@ other.
 
 ## What it does
 
+- **Shares.** A collection, a book or one note, to phones you have paired with,
+  sealed end to end over Maxima — to read, to write in, or to hand on. It
+  arrives while the pad is closed, and two people's writing is merged.
 - **Writes.** A ruled page, the cursor in it, saved as you go. No save button.
 - **Holds.** Collections hold books, books hold notes. Nothing is buried deeper.
 - **Colours.** One colour scale and a tone slider, set per collection, book or
@@ -89,11 +113,8 @@ other.
 - **Puts away.** One archive and one bin for everything, with a way back out.
 - **Backs up.** One file holding every collection, book, note and attachment.
   Importing asks whether to add to what is here or replace it.
-- **Finds.** Search across the whole pad, the things you keep to hand, what you
-  wrote in lately, and the whole tree at once.
-- **Shares.** End-to-end sealed, over Maxima, to phones you have paired with — a
-  collection, a book or one note, to read, to write in, or to hand on. It arrives
-  while the pad is closed.
+- **Finds.** Search across the whole pad, your favourites, what you wrote in
+  lately, and **Tree view** — every collection, book and note at once.
 
 Notes are **not encrypted at rest**. Protect the phone. Maxima supplies
 encrypted transport; this is not an encrypted vault.
