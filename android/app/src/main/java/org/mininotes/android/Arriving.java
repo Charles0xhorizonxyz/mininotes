@@ -68,6 +68,27 @@ final class Arriving {
     }
 
     /**
+     * The same question, for a copy this phone may only read.
+     *
+     * <p>A copy is not a second notebook. What its owner sends is what it says, and nothing here is weighed
+     * against it: where this phone's copy says something else - written in on a build that let a reader
+     * write, or before they were made one - it is not put together with what arrived, it is replaced, and
+     * whoever calls this keeps what it said as a version. The one thing still set aside is what is older
+     * than what has already come from the same phone, so a message that took the long way round cannot
+     * undo a newer one that arrived first.
+     *
+     * @param lastFromThem the revision this phone last took from the sender, or 0 where it never has
+     */
+    static Decision copy(String here,long hereRev,long lastFromThem,String theirs,long theirRev) {
+        String came=theirs==null?"":theirs;
+        if(here==null)return new Decision(What.NEW,came,Math.max(0,theirRev),false);
+        if(theirRev<lastFromThem)return new Decision(What.OLDER,null,hereRev,false);
+        // Counted on from where this phone is, never back: a count that went backwards would make the
+        // next thing to arrive look like old news.
+        return new Decision(What.NEWER,came,Math.max(hereRev,theirRev),false);
+    }
+
+    /**
      * The revision two phones last both had, from what this phone believes and what the sender says.
      *
      * <p>The older of the two, always. Both beliefs fail the same way — taking the other phone to have

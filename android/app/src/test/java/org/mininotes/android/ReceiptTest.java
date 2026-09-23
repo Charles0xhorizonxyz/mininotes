@@ -11,7 +11,7 @@ public class ReceiptTest {
 
     @Test public void somethingALaterBuildSaysIsStillAnAnswer() {
         // Read as a number rather than refused: what to do about one it does not know is the caller's.
-        assertEquals(7,Receipt.open(Receipt.wrap(7)));
+        assertEquals(12,Receipt.open(Receipt.wrap(12)));
     }
 
     @Test public void aNoteIsNotAnAnswer() throws Exception {
@@ -34,7 +34,7 @@ public class ReceiptTest {
     }
 
     @Test public void nothingElseIsTakenForLeaving() {
-        for(int about:new int[]{0,Receipt.HAVE,Receipt.ASK,Receipt.TOOK,7})
+        for(int about:new int[]{0,Receipt.HAVE,Receipt.ASK,Receipt.TOOK,Receipt.REMOVED_PAGE,12})
             assertNull(Receipt.leftScope(about));
         // Everything on a phone is not something that can be left, and nothing is sent that says it was.
         assertEquals(0,Receipt.left(Sharing.Scope.LIBRARY));
@@ -44,6 +44,30 @@ public class ReceiptTest {
     @Test public void leavingIsNotANote() {
         assertNull(Parcel.open(Receipt.wrap(Receipt.LEFT_BOOK)));
         assertNull(Hello.open(Receipt.wrap(Receipt.LEFT_BOOK)));
+    }
+
+    // ---- being taken off ----------------------------------------------------------------------------------
+
+    @Test public void beingTakenOffSaysWhichKindOfThing() {
+        for(Sharing.Scope scope:new Sharing.Scope[]{Sharing.Scope.PAGE,Sharing.Scope.BOOK,Sharing.Scope.COLLECTION})
+            assertEquals(scope,Receipt.removedScope(Receipt.open(Receipt.wrap(Receipt.removed(scope)))));
+    }
+
+    @Test public void takingOffAndLeavingAreNotTheSameWord() {
+        // The one is said by the person going; the other to them. A phone must never take one for the other.
+        for(Sharing.Scope scope:new Sharing.Scope[]{Sharing.Scope.PAGE,Sharing.Scope.BOOK,Sharing.Scope.COLLECTION}) {
+            assertNull(Receipt.leftScope(Receipt.removed(scope)));
+            assertNull(Receipt.removedScope(Receipt.left(scope)));
+        }
+        for(int about:new int[]{0,Receipt.HAVE,Receipt.ASK,Receipt.TOOK,12})
+            assertNull(Receipt.removedScope(about));
+        assertEquals(0,Receipt.removed(Sharing.Scope.LIBRARY));
+        assertEquals(0,Receipt.removed(null));
+    }
+
+    @Test public void beingTakenOffIsNotANote() {
+        assertNull(Parcel.open(Receipt.wrap(Receipt.REMOVED_COLLECTION)));
+        assertNull(Hello.open(Receipt.wrap(Receipt.REMOVED_COLLECTION)));
     }
 
     // ---- asking to be answered --------------------------------------------------------------------------

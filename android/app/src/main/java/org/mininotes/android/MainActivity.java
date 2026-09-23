@@ -184,6 +184,12 @@ public final class MainActivity extends Activity {
     /** Whether the open note is shared at all, so the mark can ask to be pressed the moment a word is typed. */
     private boolean pageShared;
     /**
+     * Whether the open note is somebody's, shared to be read: the page takes no writing, so nothing is ever
+     * sent back to be refused. Who it came from, for the one time the page says so out loud.
+     */
+    private boolean readOnly, saidReadOnly;
+    private String readOwner="";
+    /**
      * The revision of the notebook's copy that {@link #kept} is. Kept apart from the note's own revision,
      * which a writing counts up before it knows whether it will be allowed: a writing that was refused
      * had already moved that number on, the page then looked no older than the notebook, and the words
@@ -447,7 +453,9 @@ public final class MainActivity extends Activity {
     private void keyboard(boolean wanted){getWindow().setSoftInputMode((wanted?WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE:WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN)|WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);}
     /** The keyboard, asked for rather than arriving: a tap or a double tap on the page, and nothing else. */
     private void writeOn() {
-        if(page==null)return;
+        // Not on a page that takes no writing. Quietly: the keyboard can be asked for by a page that has
+        // since been filled with somebody's note, and that is nobody tapping.
+        if(page==null||readOnly)return;
         page.requestFocus();
         // Asked for two ways. SHOW_IMPLICIT is a request the system is free to ignore, and it does ignore
         // one made before the window has focus - which is exactly when a brand new note asks. The insets
@@ -492,6 +500,40 @@ public final class MainActivity extends Activity {
             owed->{if(active!=null&&active.id.equals(id)){owedNow=owed;saidState();}},e->{});
     }
 
+    /**
+     * Whether the open page takes writing.
+     *
+     * <p>A note somebody shares to be read is read here: the keyboard does not come, the title is not for
+     * changing, an old version is to look at, and nothing this page could do writes the note - so nothing
+     * is ever sent back to be refused. It was a word in the sharing box and no more: a reader could type,
+     * their phone sent it, and the owner's phone took it in. Asked when the page opens and again whenever
+     * who may do what arrives, because the person it came from can change their mind while it is open;
+     * given writing back, the page is simply built again as one that writes.
+     */
+    private void askWritable() {
+        if(active==null||shelves||page==null)return;
+        final String id=active.id;
+        background.submit(()->store.readOnlyHere(id),said->{
+            if(active==null||shelves||page==null||!active.id.equals(id))return;
+            boolean now=(Boolean)said[0];
+            readOwner=(String)said[1];
+            if(now==readOnly)return;
+            if(!now){closeNote();open(id);return;}
+            readOnly=true;
+            handler.removeCallbacks(autoSave);
+            // No keys, and the words still there to be held and copied. Making the text selectable sets
+            // it again, which the page must not take for typing.
+            loading=true;
+            page.setKeyListener(null);
+            page.setTextIsSelectable(true);
+            loading=false;
+            keyboard(false);
+            InputMethodManager keys=(InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);
+            if(keys!=null)keys.hideSoftInputFromWindow(page.getWindowToken(),0);
+            saidState();
+        },e->{});
+    }
+
     /** The same line, borrowed for as long as something is happening. */
     private void status(String words) {
         if(status!=null){status.setTextColor(MUTED);status.setText(words);status.setVisibility(View.VISIBLE);}
@@ -501,6 +543,8 @@ public final class MainActivity extends Activity {
     private void saidState() {
         if(status==null)return;
         if(failed){status.setTextColor(WARN);status.setText(R.string.save_failed);status.setVisibility(View.VISIBLE);return;}
+        // A copy shared to be read says so, in the place the state of the page is said, for as long as it is one.
+        if(readOnly){status("Read only");return;}
         status.setTextColor(MUTED);
         status.setText(owedNow==0?"":owedNow==1?"Not sent yet":"Not sent to "+owedNow+" addresses");
         // Gone rather than empty, so that a name with nothing under it sits in the middle of the bar.
@@ -598,7 +642,8 @@ public final class MainActivity extends Activity {
 
     /** The whole app, most of the time: one ruled page. */
     private void write(NoteStore.Note note) {
-        active=note;shelves=false;carrying=null;saved=edits;failed=false;pageShared=false;shell();
+        active=note;shelves=false;carrying=null;saved=edits;failed=false;pageShared=false;
+        readOnly=false;saidReadOnly=false;readOwner="";shell();
         LinearLayout top=bar();
         top.addView(heavy("←","Back to this book",30,INK,v->{if(active!=null)openBookOf(active.book);}));
         // The note's title, where every other level has its name: at the top, and only there. It used to
@@ -647,8 +692,8 @@ public final class MainActivity extends Activity {
         page.setShowSoftInputOnFocus(false);
         final android.view.GestureDetector taps=new android.view.GestureDetector(this,
             new android.view.GestureDetector.SimpleOnGestureListener() {
-                @Override public boolean onSingleTapUp(MotionEvent e){reachLine(e.getY());writeOn();return false;}
-                @Override public boolean onDoubleTap(MotionEvent e){reachLine(e.getY());writeOn();return false;}
+                @Override public boolean onSingleTapUp(MotionEvent e){tapped(e.getY());return false;}
+                @Override public boolean onDoubleTap(MotionEvent e){tapped(e.getY());return false;}
             });
         page.setOnTouchListener((v,event)->{
             taps.onTouchEvent(event);
@@ -680,9 +725,28 @@ public final class MainActivity extends Activity {
         // A keyboard cannot be raised on a window that has not been given focus yet, and a note made a
         // moment ago is on one that is still arriving. So it is asked for now, and asked for again the
         // moment the window is actually listening.
+        // Not on a copy this phone may only read, where there is nothing to write with.
+        if(note.theirs&&!note.writes)blank=false;
         wantKeyboard=blank;
         if(blank){keyboard(true);focus();page.postDelayed(this::writeOn,300);}
         else keyboard(false);
+        askWritable();
+    }
+
+    /**
+     * A tap on the page: the keyboard, on the line that was tapped. On a page that takes no writing, the
+     * one thing a tap gets is told why, once an opening - the line under the title says it the rest of
+     * the time.
+     */
+    private void tapped(float y) {
+        if(readOnly) {
+            if(!saidReadOnly) {
+                saidReadOnly=true;
+                toast(readOwner.isEmpty()?"Read only":"Read only. Ask "+readOwner+" to let you write in it.");
+            }
+            return;
+        }
+        reachLine(y);writeOn();
     }
 
     /**
@@ -697,7 +761,7 @@ public final class MainActivity extends Activity {
      * <p>Only downward, and only into blank space. A tap among the writing means what it has always meant.
      */
     private void reachLine(float y) {
-        if(page==null)return;
+        if(page==null||readOnly)return;
         android.text.Layout out=page.getLayout();
         if(out==null)return;
         // Not on a page with nothing on it. A note is named by its first line, and a tap near the foot of
@@ -757,8 +821,10 @@ public final class MainActivity extends Activity {
     private void load(NoteStore.Note note) {
         if(edits!=saved)return;
         active=note;saved=edits;fill(note);
-        // The bar was drawn before this note existed on it, so the mark is asked again now that it does.
+        // The bar was drawn before this note existed on it, so the mark is asked again now that it does -
+        // and so is whether the page takes writing, which the blank page it was dropped into did.
         askWhatIsOwed();refreshOwed();
+        askWritable();
     }
     private void fill(NoteStore.Note note) {
         kept=note.body==null?"":note.body;keptRevision=note.revision;
@@ -784,6 +850,7 @@ public final class MainActivity extends Activity {
      */
     private void renameNote() {
         if(active==null||named==null||nameHolder==null||named.getParent()==null)return;
+        if(readOnly){toast("Read only");return;}
         final NoteStore.Note note=active;
         String offered=note.title.trim();
         if(offered.isEmpty()&&page!=null) {
@@ -812,7 +879,8 @@ public final class MainActivity extends Activity {
     /** A page nobody wrote on is thrown away rather than kept as an empty page. */
     private void closeNote() {
         if(active==null)return;
-        if(blank()){final String id=active.id;handler.removeCallbacks(autoSave);active=null;background.submit(()->{store.remove(id);return null;},done->{},e->{});}
+        // Not a copy somebody shares to be read: an empty one is theirs to fill, and would only come back.
+        if(blank()&&!readOnly){final String id=active.id;handler.removeCallbacks(autoSave);active=null;background.submit(()->{store.remove(id);return null;},done->{},e->{});}
         else save();
     }
     private void blankPage(String book){NoteStore.Note note=new NoteStore.Note();note.book=book;write(note);}
@@ -829,7 +897,7 @@ public final class MainActivity extends Activity {
 
     /** Hands the worker its own copy, so text typed while a write is in flight cannot change what is written. */
     private void save() {
-        handler.removeCallbacks(autoSave);if(active==null||edits==saved)return;
+        handler.removeCallbacks(autoSave);if(active==null||edits==saved||readOnly)return;
         // Addresses are marked when the typing stops rather than at every keystroke: the same moment the
         // note is written down, and cheap even on a long one.
         linkify();
@@ -1853,15 +1921,18 @@ public final class MainActivity extends Activity {
     private void putVersionBack(final NoteStore.Branch thing,final NoteStore.Version version) {
         final String note=thing.id;
         background.submit(()->{
+            // A copy this phone may only read says what its owner says; an old version of it is to look at.
+            if((Boolean)store.readOnlyHere(note)[0])return false;
             // What it says now is kept first: putting an old version back is another writing, not an undoing.
             store.keepVersion(note,"");
             NoteStore.Note now=store.get(note);
-            if(now==null)return null;
+            if(now==null)return false;
             now.title=version.title;now.body=version.body;
             now.updated=System.currentTimeMillis();now.revision++;
             store.save(now);
-            return null;
+            return true;
         },done->{
+            if(!done){alert("Read only. This note is somebody else's to change.");return;}
             toast("Put back");
             if(active!=null&&active.id.equals(note))open(note);else refresh();
         },e->alert("Could not put that version back. Nothing was changed."));
@@ -2060,6 +2131,8 @@ public final class MainActivity extends Activity {
                 }
                 // And anybody this phone told it had left something, who may have been asleep for it.
                 try{Post.leftAgain(this,store,keys());}catch(Exception notNow){/* the next opening says it */}
+                // And anybody this phone took off something, for the same reason.
+                try{Post.removedAgain(this,store,keys());}catch(Exception notNow){/* the next opening says it */}
                 return null;
             },done->{},e->{});
         },e->{});
@@ -4700,10 +4773,31 @@ public final class MainActivity extends Activity {
             e->alert("Could not change that."));
     }
 
-    /** Taking access away is one tap, and one tap puts it back: a box in between would be in the way. */
-    private void stopSharing(Sharing.Scope scope,String target,String name,Sharing.Rule rule,String who) {
-        background.submit(()->{store.removeShare(rule);return null;},
-            done->{toast(who+" no longer receives this");refresh();sharedWith(scope,target,name);},
+    /**
+     * Taking access away is one tap, and one tap puts it back: a box in between would be in the way.
+     *
+     * <p>Written down as a decision, and then said: to the person taken off, by the same road as leaving,
+     * so that their copy becomes their own; and to everybody else who has the thing, in the list that
+     * travels with it. It used to be a row deleted here and nothing more, and the person taken off went
+     * on with a tick on their copy.
+     */
+    private void stopSharing(final Sharing.Scope scope,final String target,final String name,
+                             final Sharing.Rule rule,final String who) {
+        final long now=System.currentTimeMillis();
+        background.submit(()->{store.removeShare(rule,now);return null;},
+            done->{
+                refresh();sharedWith(scope,target,name);
+                final int job=busy("Telling "+who+"…");
+                network.submit(()->{
+                    boolean told=Post.removed(this,store,keys(),scope,target,rule.address,now);
+                    busySay(job,"Telling the others…");
+                    Post.changed(this,store,keys(),kindOf(scope),target);
+                    return told;
+                },told->{
+                    saidState();refresh();refreshOwed();
+                    busyDone(job,told?"Removed":"Removed. "+who+" is told when their phone is next open.");
+                },e->{busyDone(job,null);alert("Removed here. "+who+" could not be told yet; this phone tells them again by itself.");});
+            },
             e->alert("Could not change that. Nothing was changed."));
     }
 
@@ -5505,9 +5599,10 @@ public final class MainActivity extends Activity {
         // asked again what is still waiting.
         if(landed.answered) {
             askWhatIsOwed();refresh();refreshOwed();
-            // Somebody changed what this phone may do while the box saying so was open.
+            // Somebody changed what this phone may do while the box saying so was open - or the page.
             if(landed.people&&boxScope!=null&&shareBox!=null&&shareBox.isShowing())
                 sharedWith(boxScope,boxTarget,boxName);
+            if(landed.people)askWritable();
             return;
         }
         if(landed.said==null)return;
@@ -5517,6 +5612,8 @@ public final class MainActivity extends Activity {
         if(landed.people&&boxScope!=null&&shareBox!=null&&shareBox.isShowing())
             sharedWith(boxScope,boxTarget,boxName);
         changedUnderneath(landed.note);
+        // Taken off the thing that is open, say: the copy is this phone's own now, and the page writes.
+        if(landed.people)askWritable();
     }
 
     /**

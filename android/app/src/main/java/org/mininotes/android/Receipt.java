@@ -82,6 +82,40 @@ final class Receipt {
         }
     }
 
+    /**
+     * "You are off this." Said by whoever took somebody off something - its owner, or an admin of it - to
+     * the person taken off, by the same road as leaving: which note in the envelope, and when it was
+     * decided where a revision goes.
+     *
+     * <p>Remove used to be a row deleted on one phone. The person taken off kept a copy that still wore a
+     * tick, went on sending what they wrote in it, and had it taken in - and their next word even wrote
+     * them back into the list, since whoever sends a thing is written down as having it. Told, their phone
+     * does what it does on leaving: the copy becomes their own, and everybody who had the thing hears
+     * they are off it, which reaches whoever else had not.
+     */
+    static final int REMOVED_PAGE=7, REMOVED_BOOK=8, REMOVED_COLLECTION=9;
+
+    /** The number that says somebody is off a thing shared at this level, or 0 where nobody can be. */
+    static int removed(Sharing.Scope scope) {
+        if(scope==null)return 0;
+        switch(scope) {
+            case PAGE: return REMOVED_PAGE;
+            case BOOK: return REMOVED_BOOK;
+            case COLLECTION: return REMOVED_COLLECTION;
+            default: return 0;
+        }
+    }
+
+    /** Which kind of thing somebody was taken off, or null where the number says something else. */
+    static Sharing.Scope removedScope(int about) {
+        switch(about) {
+            case REMOVED_PAGE: return Sharing.Scope.PAGE;
+            case REMOVED_BOOK: return Sharing.Scope.BOOK;
+            case REMOVED_COLLECTION: return Sharing.Scope.COLLECTION;
+            default: return null;
+        }
+    }
+
     private Receipt(){}
 
     /** The inside of an answer. */

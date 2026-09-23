@@ -115,6 +115,28 @@ final class Sharing {
         return reached;
     }
 
+    /**
+     * What one device may do with a page, by every rule that reaches it: the rule that says the most, or
+     * null where none names them at all.
+     *
+     * <p>Unlike {@link #audience}, this is given the rows that say somebody is off a thing, and answers
+     * with one: taken off is not the same as never given, and a phone hearing from somebody taken off has
+     * something to tell them. The device is named by any address it has been at, or by the key it signs
+     * with, because an address moves and a rule written last month may still hold the old one.
+     */
+    static Rule standing(Collection<Rule> rules,String collection,String book,String page,
+                         Collection<String> addresses,String key) {
+        Rule most=null;
+        for(Rule rule:rules) {
+            if(!covers(rule,collection,book,page))continue;
+            boolean them=(addresses!=null&&addresses.contains(rule.address))
+                ||(key!=null&&!key.isEmpty()&&key.equals(rule.key));
+            if(!them)continue;
+            if(most==null||rule.level.ordinal()>most.level.ordinal())most=rule;
+        }
+        return most;
+    }
+
     /** True when a rule set at its level applies to this page. A rule for another target must never apply. */
     static boolean covers(Rule rule,String collection,String book,String page) {
         switch(rule.scope) {

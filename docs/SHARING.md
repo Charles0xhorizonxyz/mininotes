@@ -36,7 +36,7 @@ Decided on 18 September 2026, after the person whose app this is said plainly th
 In the order it is being built:
 
 1. ~~The answer.~~ Done, v0.0.93.
-2. The Share box as Drive has it, with roles that are rules. **Partly done, v0.0.101**: the box is two sections — *Who has access*, where a person wears a round initial and their role drops down, and *Syncing*, which is switches and one drop-down — and a role now **arrives**: changing one sends at once (`Post.changed`), and the phone given it writes down its own standing (schema 20, `standing`) and says *Admin* where it could only say *Can write*. **v0.0.102**: an admin on the receiving phone can add somebody and change what the others may do, and everybody but the owner can **Unfollow** — which, unlike stopping, tells everybody who has the thing, makes the copy here this phone's own, and is undone only by being given the thing again (see *Leaving*, below). **Still to do: the roles are words and not yet rules.** Nothing stops a reader typing, their phone sends what they typed back, and the owner's phone takes it in. And *Remove* tells nobody: the person taken off keeps a copy that still wears a tick.
+2. The Share box as Drive has it, with roles that are rules. **Partly done, v0.0.101**: the box is two sections — *Who has access*, where a person wears a round initial and their role drops down, and *Syncing*, which is switches and one drop-down — and a role now **arrives**: changing one sends at once (`Post.changed`), and the phone given it writes down its own standing (schema 20, `standing`) and says *Admin* where it could only say *Can write*. **v0.0.102**: an admin on the receiving phone can add somebody and change what the others may do, and everybody but the owner can **Unfollow** — which, unlike stopping, tells everybody who has the thing, makes the copy here this phone's own, and is undone only by being given the thing again (see *Leaving*, below). **v0.0.108: the roles are rules.** A note shared to be read is read: its page takes no keyboard, its title is not for changing, and it says *Read only* under its name. What arrives from somebody who may only read a thing - or who has been taken off it - is not written down, whatever build they are on, and is answered so they stop sending it. And a copy this phone may only read takes what its owner sends rather than merging with it. *Remove* now tells the person taken off, by the road *Unfollow* uses the other way, and their copy becomes their own; see *Leaving*.
 3. *Ana is writing…*
 4. Taking away what this replaces: the chip that goes round four states, the two sets of marks, the toggle for whose a device is, the address list, and the box left over from the Minima Core design.
 
@@ -64,6 +64,10 @@ You name the devices, and for each thing you share you say what that device may 
 - **Admin.** Reads and writes, and may hand it on. This is the one that makes a shared thing a shared thing rather than a broadcast, which is why it is deliberately not the first tap.
 
 It is decided per share, so the same device can have one book of yours to read and another to work in. Whether a device is *yours* — a tablet rather than a friend — is said once on the device, and decides only which mark the thing wears.
+
+**Read is a rule, at both ends.** On the phone given a thing to read, the page takes no writing: no keyboard comes, the title is not for changing, an old version is to look at and not to put back, and the line under the name says *Read only* (once, on a tap, the page says whose it is to change). On every phone that receives, what arrives is weighed against what the sender may do with the thing *here* — by every rule that reaches the note, the most any says — before a word of it is written down. A reader's words, or those of somebody taken off, are not; and they are answered all the same, because a phone that is not answered sends the same thing every quarter of an hour for ever. The rule is asked *after* the list that came with the note has been folded in, so the first thing ever to arrive from somebody is reached by the line saying they have it.
+
+**A copy you may only read is a copy.** What its owner sends is what it says: nothing on it is merged with what arrived, and where the copy said something else - written in on a build that let a reader write, or before they were made one - that is kept as a version and the page says what the owner says. The one thing still set aside is what is older than what already came from the same phone.
 
 Nothing leaves the phone unless you named a device. A note can be shared by where it sits — that is what setting a rule on a book or a collection means — which is exactly why moving something between them has to be confirmed.
 
@@ -191,8 +195,22 @@ undoes it. **Unfollow** is a different thing, offered to everybody but the owner
   entry, decided *later* than the leaving, is an invitation: the leaving is forgotten and the note is theirs
   again.
 
-*Remove*, the owner's side of the same thing, still tells nobody. It should say so to the person removed, by
-the same road, and their copy should become their own in the same way.
+**Remove is the same thing from the other side** (v0.0.108). Whoever has a say in a thing - its owner, or an
+admin of it - takes somebody off it, and that is written down as a decision at *gone* with when it was made,
+never as a row deleted: a deleted row came back with the next list, and the next word the removed person wrote
+wrote them back in, since whoever sends a thing is written down as having it.
+
+- The person taken off is told, in the same five bytes as leaving, the other way (`Receipt.REMOVED_*`): which
+  note in the envelope, when it was decided where a revision goes. Their phone takes it only from somebody with
+  a say in the thing, and only for a thing that is theirs, and then does what it does on leaving
+  (`NoteStore.takenOff` → `letGo`): the copy is its own as of that moment, and everybody who had the thing is told
+  they are off it - which reaches whoever else had not heard.
+- Everybody else hears in the list, which goes at once with one note out of the thing (`Post.changed`).
+- The telling is said again at every opening for a week (`Post.removedAgain`), as leaving is; a phone that has
+  already heard, or that left by itself, does nothing about hearing it again. And whatever the removed phone
+  still sends before it hears is not written down, and is answered with the telling.
+- Being given the thing again brings it back, exactly as after leaving: an entry for this phone decided *later*
+  than the taking off.
 
 ## What a file kept with a note does, which is stay here
 
@@ -206,7 +224,7 @@ Until then a file is `▫` — on this device only — whatever the note it sits
 
 The pad runs its own Maxima node: the transport's core is vendored into the app, started with it, and attaches to the public relays. `⋮` → **Profile** shows the address it was given, the code another device scans, and a checklist of what is and is not working — whether a relay has answered, whether there is anybody to send to, whether their keys are known.
 
-Seen between a Pixel 7 Pro and a GrapheneOS Pixel 7, in both directions: scanned, accepted, granted, sent, carried by a public relay, opened, filed on the right shelf, marked, and merged into a page that was open at the time. Each of those is recorded with the build it was seen on, in a verification log the maintainer keeps privately.
+Seen between a Pixel 7 Pro and a GrapheneOS Pixel 7, in both directions: scanned, accepted, granted, sent, carried by a public relay, opened, filed on the right shelf, marked, and merged into a page that was open at the time. [ANDROID-VERIFICATION.md](ANDROID-VERIFICATION.md) has each of those with the build it was seen on.
 
 ## Staying up while the pad is closed
 
@@ -314,17 +332,17 @@ Each device holds two EC keypairs, one to sign and one to agree. Android Keystor
 
 ## Not built
 
-**Pausing does not tell anybody, and neither does Remove.** A phone that has *paused* a note hears it, sets it aside and says nothing, by design — so the phone sending it never gets an answer, its mark says *waiting* for ever, and it goes on trying every quarter of an hour. *Unfollow* (v0.0.102) is the way of going that does say so; see *Leaving*. *Remove* wants the same: the person taken off is told nothing and keeps a copy that still wears a tick.
+**Pausing does not tell anybody.** A phone that has *paused* a note hears it, sets it aside and says nothing, by design — so the phone sending it never gets an answer, its mark says *waiting* for ever, and it goes on trying every quarter of an hour. *Unfollow* (v0.0.102) and *Remove* (v0.0.108) are the two ways of going that do say so; see *Leaving*.
 
 **An admin adding a third device has not been seen.** There are two phones. What is pure in it is tested — a shelf keeps one name whoever sends it, and a list for the owner's own book comes home to that book (`ComingHomeTest`) — and the rest waits for a third phone. One thing is known to be wrong already: the third phone will call whoever *sent* it the note the owner, because *owner* is worked out from where a note arrived from.
-
-**Roles are labels.** See step 2 above: a reader can write, and what they write comes back and is taken in.
 
 **It stops hearing when the phone goes into its deep sleep.** Measured: a Pixel 7 Pro off its charger with the screen off was in Doze within twelve minutes, and in Doze Android cuts an app's network whether or not it has a foreground service. The process stayed up, the service stayed up, and nothing arrived — and the note sent to it in that time was *taken by a relay and lost*, which is the item above seen happening. The only way through is for the person to exempt the app from battery optimisation, which is theirs to grant and has a cost, so nothing asks for it yet. Until then the honest description is: it listens while the pad is closed *and the phone is awake or charging*.
 
 **It does not start again by itself after the phone restarts.** The pad has to be opened once.
 
-**What this phone may do is written down, and is not yet acted on.** Since v0.0.101 a membership that arrives still leaves this phone's own entry out of `shares` — a row there is somebody to send to — and keeps it in `standing` instead, so the box says *Admin* on the phone that was made one, for a note, a book or a collection. What it does not yet do is *let* an admin hand the thing on from there, or stop a reader writing: see step 2 at the top.
+**The list is taken at its word.** Every phone folds in the membership that arrives with a note before asking what the sender may do, and the later decision wins per person. So a phone that *claimed* to have been made an admin, in a list it wrote itself, would be believed. Nothing in the app writes such a list, and a stranger cannot: the envelope has to be signed by a device paired here. It is a thing a changed build could do, and the answer - a decision signed by whoever made it - is a change to what travels.
+
+**A reader's phone still sends.** It has nothing of its own to send, but what is owed is worked out from who has the thing, and a copy that arrived from the owner is owed, by that reckoning, to the other people on the list; it goes, is not written down at the other end, and is answered, after which nothing is owed. One message per person per note, once. It could be spared by not counting a read-only copy as owed at all.
 
 **Attachments do not travel.** A Maxima message is a message, not a transfer, so a file needs splitting, reassembling and asking again for the pieces that did not arrive — a small protocol with its own state beside the one the outbox already keeps. The share box says so rather than letting somebody find out at the other end.
 

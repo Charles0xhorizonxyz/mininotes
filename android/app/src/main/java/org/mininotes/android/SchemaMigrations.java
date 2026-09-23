@@ -12,7 +12,7 @@ import java.util.List;
  * types, so the version rules are unit tested without a device.
  */
 final class SchemaMigrations {
-    static final int VERSION=21;
+    static final int VERSION=22;
 
     /** Every pad starts with one collection holding one book, so writing never begins with a decision. */
     static final String FIRST_COLLECTION="collection-first", FIRST_BOOK="book-first";
@@ -266,6 +266,22 @@ final class SchemaMigrations {
         "ALTER TABLE refused ADD COLUMN gone INTEGER NOT NULL DEFAULT 0",
     };
 
+    /**
+     * What was given at pairing time is what the offer said.
+     *
+     * <p>Since rows have had a level, the one thing that wrote a row without one was giving somebody a
+     * thing off their code: `mine` went in as the offer said, `level` was left to the table's default,
+     * and the default is <i>read</i>. Nothing read `mine` any more, so everybody given something that way
+     * was a reader by the column everything reads - which showed nowhere while a reader could still write,
+     * and would have made every such share read-only the day that stopped. Those rows, and only those,
+     * say one thing in `mine` and another in `level`; they are made to agree with the offer, and dated from
+     * when they were made, so that they can be outranked by a decision and not by any list that arrives.
+     */
+    private static final String[] GIVEN={
+        "UPDATE shares SET level=2 WHERE level=1 AND mine=1",
+        "UPDATE shares SET changed=added WHERE changed=0",
+    };
+
     /** STEPS[i] upgrades a database at version i+1 to version i+2. */
     private static final String[][] STEPS={
         {VIEW_INDEX},
@@ -308,6 +324,8 @@ final class SchemaMigrations {
         STANDING,
         // 20 -> 21: stopped for now is not the same as left.
         LEAVING,
+        // 21 -> 22: what was given at pairing time is what the offer said.
+        GIVEN,
     };
 
     /** The one collection and the one book a pad cannot be without, for a restore that carries neither. */
@@ -336,6 +354,7 @@ final class SchemaMigrations {
         Collections.addAll(statements,AGREED);
         Collections.addAll(statements,STANDING);
         Collections.addAll(statements,LEAVING);
+        Collections.addAll(statements,GIVEN);
         return statements;
     }
 

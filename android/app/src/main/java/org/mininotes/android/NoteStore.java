@@ -632,8 +632,11 @@ final class NoteStore extends SQLiteOpenHelper {
                 collection.isEmpty()?collectionOfBook(fallbackBook):collection);
             if(book.isEmpty())book=fallbackBook;
         }
-        Arriving.Decision said=landed(id,from,revision,parcel==null?"":parcel.title,
-            parcel==null?"":parcel.body,book,parcel==null?-1L:parcel.basedOn);
+        // A copy this phone may only read is not weighed against anything: see copied.
+        Arriving.Decision said=already!=null&&already.theirs&&parcel!=null&&!parcel.writes
+            ?copied(id,from,revision,parcel.title,parcel.body,book)
+            :landed(id,from,revision,parcel==null?"":parcel.title,
+                parcel==null?"":parcel.body,book,parcel==null?-1L:parcel.basedOn);
         if(parcel!=null) {
             // What they say this end may do with it. Said every time, because they can change their mind.
             ContentValues v=new ContentValues();v.put("writes",parcel.writes?1:0);
@@ -644,6 +647,38 @@ final class NoteStore extends SQLiteOpenHelper {
                 "id=? AND theirs=1 AND origin NOT IN (SELECT address FROM addresses)",new String[]{id});
         }
         return said;
+    }
+
+    /**
+     * A note that arrived for a copy this phone may only read: what they sent is what it says.
+     *
+     * <p>Nothing here is put together with it. A reader's copy is a copy, and where it says something
+     * else - written in on a build that let a reader write, or before they were made one - that is kept
+     * as a version, so nothing anybody wrote is only somewhere else, and the page then says what its
+     * owner says. See {@link Arriving#copy}.
+     */
+    private Arriving.Decision copied(String id,String from,long revision,String title,String body,String book) {
+        SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        try {
+            Note here=get(id);
+            String came=body==null?"":body, called=title==null?"":title;
+            Arriving.Decision said=Arriving.copy(here==null?null:here.body,here==null?0:here.revision,
+                lastSeen(id,from),came,revision);
+            // What this phone's copy said, before it stops saying it.
+            if(here!=null&&said.what!=Arriving.What.OLDER
+                &&(!here.body.equals(came)||!(here.title==null?"":here.title).equals(called)))keepVersion(id,"");
+            keepVersion(id,revision,from,called,came);
+            if(said.what!=Arriving.What.OLDER) {
+                Note now=here==null?new Note():here;
+                if(here==null){now.id=id;now.book=book;now.theirs=true;now.origin=from;}
+                now.title=called;now.body=said.text==null?"":said.text;
+                now.revision=said.revision;now.updated=System.currentTimeMillis();
+                save(db,now);
+                agreedOn(from,id,revision);
+            }
+            db.setTransactionSuccessful();
+            return said;
+        } finally {db.endTransaction();}
     }
 
     /**
@@ -841,6 +876,12 @@ final class NoteStore extends SQLiteOpenHelper {
             :kind==Branch.Kind.COLLECTION?Sharing.Scope.COLLECTION:null;
     }
 
+    /** The same three levels the other way round, and everything for the fourth. */
+    static Branch.Kind kindFor(Sharing.Scope scope) {
+        return scope==Sharing.Scope.PAGE?Branch.Kind.PAGE:scope==Sharing.Scope.BOOK?Branch.Kind.BOOK
+            :scope==Sharing.Scope.COLLECTION?Branch.Kind.COLLECTION:Branch.Kind.LIBRARY;
+    }
+
     /**
      * Left. What is here stays, and is this phone's own from now on; nothing more of it is taken in from
      * anybody who had it, and nothing of it is owed to them.
@@ -942,6 +983,77 @@ final class NoteStore extends SQLiteOpenHelper {
     }
 
     /**
+     * Whoever this phone has taken off something lately, to be told again - for the reason
+     * {@link #leavings} is: the telling is one message to a phone that may be asleep, nobody answers it,
+     * and hearing it twice does nothing. Only for a thing this phone has a say in, which is what the phone
+     * hearing it checks; a row that says somebody left by themselves is among these too, and their phone,
+     * where the thing is already its own, does nothing about it.
+     */
+    List<Leaving> removals() {
+        List<Leaving> all=new ArrayList<>();
+        long since=System.currentTimeMillis()-7L*24*60*60*1000;
+        try(Cursor c=getReadableDatabase().query("shares",new String[]{"scope","target","address","changed"},
+                "level=0 AND changed>?",new String[]{String.valueOf(since)},null,null,null)) {
+            while(c.moveToNext()) {
+                Sharing.Scope scope;
+                try{scope=Sharing.Scope.valueOf(c.getString(0));}catch(IllegalArgumentException unknown){continue;}
+                if(scope==Sharing.Scope.LIBRARY)continue;
+                String target=c.getString(1);
+                if(!saysWhoHas(scope,target))continue;
+                for(Outbox.Page page:pagesUnder(kindFor(scope),target)) {
+                    all.add(new Leaving(c.getString(2),page.id,scope,c.getLong(3)));
+                    break;
+                }
+            }
+        }
+        return all;
+    }
+
+    /** Whether this phone has a say in who has a thing: it is this phone's own, or this phone is an admin of it. */
+    boolean saysWhoHas(Sharing.Scope scope,String target) {
+        if(scope==null||target==null||target.isEmpty())return false;
+        if(cameFrom(kindFor(scope),target).isEmpty())return true;
+        Sharing.Level mine=myLevel(scope,target);
+        return mine!=null&&mine.shares();
+    }
+
+    /**
+     * Somebody says this phone is off something of theirs. Taken at their word only where they have a say
+     * in it - it came from them, or they are an admin of it here - and only for a thing that is theirs.
+     * What is here then becomes this phone's own exactly as it does on leaving, see {@link #letGo}, as of
+     * when they decided it, so that being given the thing again afterwards is later than the taking off.
+     *
+     * @param note any note out of what this phone is off; which shelf that means is worked out from this phone's own
+     * @param when when they decided it, by their clock
+     * @return whether that changed anything here
+     */
+    boolean takenOff(String from,String note,Sharing.Scope scope,long when) {
+        if(scope==null)return false;
+        if(when<=0)when=System.currentTimeMillis();
+        String book=bookOf(note);
+        String target=scope==Sharing.Scope.PAGE?(get(note)==null?"":note)
+            :scope==Sharing.Scope.BOOK?book:collectionOfBook(book);
+        if(target==null||target.isEmpty())return false;
+        Branch.Kind kind=kindFor(scope);
+        String origin=cameFrom(kind,target);
+        if(origin.isEmpty()||!hasASay(from,scope,target,origin))return false;
+        letGo(kind,target,everybodyIn(kind,target),when);
+        return true;
+    }
+
+    /** Whether a device may say who has a thing of somebody's: it is whose the thing is, or an admin of it here. */
+    private boolean hasASay(String from,Sharing.Scope scope,String target,String origin) {
+        if(origin.equals(from))return true;
+        Contact who=address(from);
+        String key=who==null?"":canonical(who.signing);
+        Contact owner=address(origin);
+        if(owner!=null&&!key.isEmpty()&&key.equals(canonical(owner.signing)))return true;
+        for(Sharing.Rule rule:membership(scope,target))
+            if((rule.address.equals(from)||(!key.isEmpty()&&key.equals(rule.key)))&&rule.level.shares())return true;
+        return false;
+    }
+
+    /**
      * Somebody says they have left something. They are taken off it, as a decision like any other, so
      * that an older copy of the list cannot put them back; and what was still waiting for their answer
      * stops waiting.
@@ -1033,6 +1145,61 @@ final class NoteStore extends SQLiteOpenHelper {
      */
     boolean mayWrite(String address,String collection,String book,String page) {
         return Boolean.TRUE.equals(Sharing.audience(shares(),collection,book,page).get(address));
+    }
+
+    /**
+     * What the device a note arrived from may do with it here: the rule that says the most among every
+     * one that reaches the note - on the shelf it is on, or on the shelf it was sent out of, since a note
+     * of theirs may have been tidied elsewhere here - or null where nothing names them.
+     *
+     * <p>This is what decides whether their words are written down. Asked after the list that came with
+     * the note has been folded in, so that the first thing ever to arrive from somebody is reached by the
+     * line saying they have it. Rows saying somebody is off a thing are read too: what arrives from
+     * them is not taken in either, and they have something to be told.
+     */
+    Sharing.Rule standingOf(String from,String id,Parcel.Sent parcel) {
+        List<Sharing.Rule> rules=everyRule();
+        Contact who=address(from);
+        String key=who==null?"":canonical(who.signing);
+        Set<String> theirs=new HashSet<>();theirs.add(from);
+        if(!key.isEmpty())for(Contact one:addresses())if(key.equals(canonical(one.signing)))theirs.add(one.address);
+        Sharing.Rule most=null;
+        Note here=get(id);
+        if(here!=null) {
+            String book=here.book==null?"":here.book;
+            most=Sharing.standing(rules,collectionOfBook(book),book,id,theirs,key);
+        }
+        if(parcel!=null) {
+            String book=shelfId(from,parcel.book,false), collection=shelfId(from,parcel.collection,true);
+            if(collection.isEmpty()&&!book.isEmpty())collection=collectionOfBook(book);
+            Sharing.Rule sent=Sharing.standing(rules,collection,book,id,theirs,key);
+            if(sent!=null&&(most==null||sent.level.ordinal()>most.level.ordinal()))most=sent;
+        }
+        return most;
+    }
+
+    /** Every row of the membership tables, the people taken off included. */
+    private List<Sharing.Rule> everyRule() {
+        List<Sharing.Rule> rules=new ArrayList<>();
+        try(Cursor c=getReadableDatabase().query("shares",null,null,null,null,null,"added ASC")) {
+            while(c.moveToNext())rules.add(rule(c));
+        }
+        return rules;
+    }
+
+    /**
+     * Whether this phone may only read a note: it came from somebody, and nothing says this phone may
+     * write in it. Asked by the page, which then takes no writing. A note this phone has left is its own
+     * and is written in like any other.
+     *
+     * @return whether it is read-only, and the name of whoever it came from
+     */
+    Object[] readOnlyHere(String id) {
+        Note note=get(id);
+        if(note==null||!note.theirs)return new Object[]{false,""};
+        Sharing.Level may=myLevel(Sharing.Scope.PAGE,id);
+        Contact who=address(note.origin);
+        return new Object[]{may==Sharing.Level.READ,who==null?"":who.name};
     }
 
     /**
@@ -2635,18 +2802,32 @@ final class NoteStore extends SQLiteOpenHelper {
         return here;
     }
 
+    /**
+     * Somebody given a thing, at the level the rule says, decided now.
+     *
+     * <p>It wrote the row without its level for as long as rows have had one: `mine` went in, `level` was
+     * left to the table's default, and the default is <i>read</i>. So everybody given something at
+     * pairing time was a reader by the column everything reads, whatever the offer had said - which
+     * showed nowhere while a reader could write, and would have made every new share read-only the day
+     * that stopped.
+     */
     void addShare(Sharing.Rule rule) {
-        ContentValues v=new ContentValues();
-        v.put("scope",rule.scope.name());v.put("target",rule.target);v.put("address",rule.address);
-        v.put("mine",rule.mine?1:0);v.put("added",System.currentTimeMillis());
-        if(getWritableDatabase().insertWithOnConflict("shares",null,v,SQLiteDatabase.CONFLICT_REPLACE)<0)
-            throw new IllegalStateException("Could not save who this is shared with");
+        setLevel(rule.scope,rule.target,rule.address,rule.level,null);
     }
 
-    void removeShare(Sharing.Rule rule) {
-        getWritableDatabase().delete("shares","scope=? AND target=? AND address=?",
-            new String[]{rule.scope.name(),rule.target,rule.address});
+    /**
+     * Somebody taken off. A decision, written down as one with when it was made, so that it travels in the
+     * list and an older copy of the list cannot put them back - the row itself used to go, and the next
+     * word they wrote wrote them back in, since whoever sends a thing is written down as having it. And
+     * nothing is waited for from them any more.
+     */
+    void removeShare(Sharing.Rule rule,long when) {
+        setLevel(rule.scope,rule.target,rule.address,Sharing.Level.GONE,null,when);
+        for(Outbox.Page page:pagesUnder(kindFor(rule.scope),rule.target))
+            getWritableDatabase().delete("handed","address=? AND page=?",new String[]{rule.address,page.id});
     }
+
+    void removeShare(Sharing.Rule rule){removeShare(rule,System.currentTimeMillis());}
 
     // ---- backups -----------------------------------------------------------------------------------------
 

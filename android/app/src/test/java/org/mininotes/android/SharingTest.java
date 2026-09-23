@@ -123,4 +123,50 @@ public class SharingTest {
         assertEquals("the collection Allotment",Sharing.travelling(Sharing.Scope.COLLECTION,"Allotment"));
         assertEquals("the book Seeds",Sharing.travelling(Sharing.Scope.BOOK,"Seeds"));
     }
+
+    // ---- what one device may do with a page, which is what decides whether its words are taken in ----------
+
+    private static final String KEY="key-of-friend";
+    private static Sharing.Rule at(Sharing.Scope scope,String target,String address,Sharing.Level level,String key) {
+        return new Sharing.Rule(scope,target,address,level,10L,key);
+    }
+    private static Sharing.Rule standing(List<Sharing.Rule> rules) {
+        return Sharing.standing(rules,HOME,DIARY,PAGE,List.of(FRIEND),KEY);
+    }
+
+    @Test public void aReaderStandsAsAReader() {
+        Sharing.Rule said=standing(List.of(at(Sharing.Scope.BOOK,DIARY,FRIEND,Sharing.Level.READ,KEY)));
+        assertEquals(Sharing.Level.READ,said.level);
+        assertFalse(said.level.writes());
+    }
+
+    @Test public void theRuleThatSaysTheMostIsTheOneThatStands() {
+        // Off the note itself, still on the book it is in: the book reaches the note, so they write.
+        Sharing.Rule said=standing(Arrays.asList(
+            at(Sharing.Scope.PAGE,PAGE,FRIEND,Sharing.Level.GONE,KEY),
+            at(Sharing.Scope.BOOK,DIARY,FRIEND,Sharing.Level.WRITE,KEY)));
+        assertEquals(Sharing.Level.WRITE,said.level);
+        assertEquals(Sharing.Scope.BOOK,said.scope);
+    }
+
+    @Test public void takenOffIsNotTheSameAsNeverGiven() {
+        // The one is a rule with something to say; the other is no rule at all.
+        Sharing.Rule off=standing(List.of(at(Sharing.Scope.PAGE,PAGE,FRIEND,Sharing.Level.GONE,KEY)));
+        assertNotNull(off);
+        assertEquals(Sharing.Level.GONE,off.level);
+        assertNull(standing(List.of()));
+        assertNull("A rule for another page says nothing about this one",
+            standing(List.of(at(Sharing.Scope.PAGE,OTHER_PAGE,FRIEND,Sharing.Level.ADMIN,KEY))));
+    }
+
+    @Test public void aDeviceIsKnownByItsKeyWhereItsAddressHasMoved() {
+        // The rule still holds the address they were at last month; they arrive from a new one.
+        Sharing.Rule said=Sharing.standing(List.of(at(Sharing.Scope.COLLECTION,HOME,"MxB..friend-then",Sharing.Level.ADMIN,KEY)),
+            HOME,DIARY,PAGE,List.of(FRIEND),KEY);
+        assertNotNull(said);
+        assertTrue(said.level.shares());
+        assertNull("Somebody else's rule is not theirs",
+            Sharing.standing(List.of(at(Sharing.Scope.COLLECTION,HOME,STRANGER,Sharing.Level.ADMIN,"key-of-stranger")),
+                HOME,DIARY,PAGE,List.of(FRIEND),KEY));
+    }
 }

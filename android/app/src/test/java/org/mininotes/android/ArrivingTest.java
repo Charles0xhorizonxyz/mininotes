@@ -169,4 +169,43 @@ public class ArrivingTest {
         assertEquals("arrived",said.text);
         assertFalse(said.unsaved);
     }
+
+    // ---- a copy this phone may only read --------------------------------------------------------------------
+
+    @Test public void aCopyNeverSeenIsSimplyKept() {
+        Arriving.Decision said=Arriving.copy(null,0,0,"Their note",3);
+        assertEquals(Arriving.What.NEW,said.what);
+        assertEquals("Their note",said.text);
+        assertEquals(3,said.revision);
+    }
+
+    @Test public void aCopyIsReplacedNotMerged() {
+        // Written in here on a build that let a reader write. Nothing of it is put together with what the
+        // owner sent: the page says what they say, and the caller keeps what it said as a version.
+        Arriving.Decision said=Arriving.copy("Milk\nBread\nMy own line",6,4,"Milk\nBread\nEggs",5);
+        assertEquals(Arriving.What.NEWER,said.what);
+        assertEquals("Milk\nBread\nEggs",said.text);
+        assertFalse(said.keepTheirs);
+    }
+
+    @Test public void aCopyCountsOnAndNeverBack() {
+        // The local count had been moved on past the owner's; the text is theirs, the count does not fall.
+        assertEquals(6,Arriving.copy("mine",6,4,"theirs",5).revision);
+        assertEquals(9,Arriving.copy("mine",6,4,"theirs",9).revision);
+    }
+
+    @Test public void aCopyDoesNotTakeWhatIsOlderThanWhatAlreadyCameFromThem() {
+        // Revision 7 came from them already; revision 5 took the long way round and arrives after it.
+        Arriving.Decision said=Arriving.copy("Their seventh",7,7,"Their fifth",5);
+        assertEquals(Arriving.What.OLDER,said.what);
+        assertNull(said.text);
+        assertEquals(7,said.revision);
+    }
+
+    @Test public void aCopyThatAlreadySaysItIsStillTaken() {
+        // So the sender is answered "took" and counts this as a revision both phones have.
+        Arriving.Decision said=Arriving.copy("Same",4,4,"Same",4);
+        assertEquals(Arriving.What.NEWER,said.what);
+        assertEquals("Same",said.text);
+    }
 }

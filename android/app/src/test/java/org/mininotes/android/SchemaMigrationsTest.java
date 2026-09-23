@@ -85,6 +85,17 @@ public class SchemaMigrationsTest {
         assertFalse(step.contains("UPDATE"));
     }
 
+    @Test public void whatWasGivenAtPairingTimeIsWhatTheOfferSaid() {
+        String step=String.join("\n",SchemaMigrations.upgrade(21,22));
+        // Only the rows that say one thing in `mine` and another in `level`: a reader somebody decided on
+        // says read in both, and is left as a reader.
+        assertTrue(step.contains("UPDATE shares SET level=2 WHERE level=1 AND mine=1"));
+        assertTrue(step.contains("UPDATE shares SET changed=added WHERE changed=0"));
+        assertFalse("nothing is taken off anybody by a repair",step.contains("level=0"));
+        // And a fresh notebook, which has no such rows, is not harmed by the same words.
+        assertTrue(String.join("\n",SchemaMigrations.create()).contains("UPDATE shares SET level=2 WHERE level=1 AND mine=1"));
+    }
+
     @Test public void upgradingNeverDiscardsStoredNotes() {
         for(String statement:SchemaMigrations.upgrade(1,SchemaMigrations.VERSION)) {
             String sql=statement.toUpperCase(java.util.Locale.ROOT);

@@ -299,30 +299,37 @@ final class Post {
         return false;
     }
 
-    /** "I have left this", to one device. Off the thread the node brought their note on. */
-    private static void tellLeft(final Context where,final Keys keys,final NoteStore.Contact them,
-                                 final byte[] page,final long when,final Sharing.Scope scope) {
-        if(where==null||them.agreement.length==0||Receipt.left(scope)==0)return;
+    /**
+     * "I have left this" - or "you are off this" - to one device, off the thread the node brought their
+     * note on. Which of the two is {@code what}, one of the numbers in {@link Receipt}.
+     */
+    private static void tellOff(final Context where,final Keys keys,final NoteStore.Contact them,
+                                final byte[] page,final long when,final int what) {
+        if(where==null||them.agreement.length==0||what==0)return;
         ANSWERS.execute(()->{
-            try{saidLeft(where,keys,them,page,when,scope);}
+            try{saidOff(where,keys,them,page,when,what);}
             catch(Exception notNow) {
-                android.util.Log.w("Mininotes/Post","could not say this phone has left: "+notNow.getClass().getSimpleName());
+                android.util.Log.w("Mininotes/Post","could not say who is off what: "+notNow.getClass().getSimpleName());
             }
         });
     }
 
-    /** @param when when this phone left, carried where a note's revision is: see {@link NoteStore#left} */
-    private static boolean saidLeft(Context where,Keys keys,NoteStore.Contact them,byte[] page,long when,
-                                    Sharing.Scope scope) throws Exception {
+    /**
+     * @param when when it was decided, carried where a note's revision is: see {@link NoteStore#left} and
+     *             {@link NoteStore#takenOff}
+     */
+    private static boolean saidOff(Context where,Keys keys,NoteStore.Contact them,byte[] page,long when,
+                                   int what) throws Exception {
         MaximaNode node=Node.node(where);
         if(node==null)return false;
         byte[] sealed=Envelope.seal(page,when,System.currentTimeMillis(),
-            Receipt.wrap(Receipt.left(scope)),keys.signing(),Keys.publicKey(them.agreement));
+            Receipt.wrap(what),keys.signing(),Keys.publicKey(them.agreement));
         com.eurobuddha.maxima.core.contacts.Contact reach=Node.known(where,them.contact);
         MaximaSender.Result said=reach!=null
             ?node.sendToContact(reach,APPLICATION,sealed)
             :node.sendRaw(routable(node,them.address),APPLICATION,sealed);
-        android.util.Log.i("Mininotes/Post","told them this phone has left: "+(said==null?"no answer":said.statusName));
+        android.util.Log.i("Mininotes/Post",(Receipt.removedScope(what)!=null?"told them they are off this: "
+            :"told them this phone has left: ")+(said==null?"no answer":said.statusName));
         return said!=null&&said.isOk();
     }
 
@@ -350,7 +357,7 @@ final class Post {
         int told=0;
         if(about!=null)for(NoteStore.Contact them:store.addresses()) {
             if(!who.contains(them.address)||them.agreement.length==0||!doesSpeak(where,them))continue;
-            try{if(saidLeft(where,keys,them,about,now,scope))told++;}
+            try{if(saidOff(where,keys,them,about,now,Receipt.left(scope)))told++;}
             catch(Exception notNow) {
                 android.util.Log.w("Mininotes/Post","could not say this phone has left: "+notNow.getClass().getSimpleName());
             }
@@ -366,9 +373,50 @@ final class Post {
                 NoteStore.Contact them=null;
                 for(NoteStore.Contact known:store.addresses())if(known.address.equals(one.address))them=known;
                 if(them==null||them.agreement.length==0||!doesSpeak(where,them))continue;
-                saidLeft(where,keys,them,sixteen(one.note),one.at,one.scope);
+                saidOff(where,keys,them,sixteen(one.note),one.at,Receipt.left(one.scope));
             } catch(Exception notNow) {
                 android.util.Log.w("Mininotes/Post","could not say again that this phone has left: "
+                    +notNow.getClass().getSimpleName());
+            }
+        }
+    }
+
+    /**
+     * Somebody taken off something, told so: by the same road as leaving, the other way. Blocking.
+     *
+     * @param when when it was decided here, which their phone then makes its copy its own as of
+     * @return whether they could be told now; they are told again at every opening for a week either way
+     */
+    static boolean removed(Context where,NoteStore store,Keys keys,Sharing.Scope scope,String target,
+                           String address,long when) {
+        if(Receipt.removed(scope)==0)return false;
+        NoteStore.Contact them=null;
+        for(NoteStore.Contact known:store.addresses())if(known.address.equals(address))them=known;
+        if(them==null||them.agreement.length==0||!doesSpeak(where,them))return false;
+        // Any note out of it names it: the phone that hears finds the shelf from its own shelves.
+        byte[] about=null;
+        for(Outbox.Page page:store.pagesUnder(NoteStore.kindFor(scope),target)) {
+            try{about=sixteen(page.id);break;}
+            catch(IllegalArgumentException older){/* a note from before sharing names nothing */}
+        }
+        if(about==null)return false;
+        try{return saidOff(where,keys,them,about,when,Receipt.removed(scope));}
+        catch(Exception notNow) {
+            android.util.Log.w("Mininotes/Post","could not say they are off this: "+notNow.getClass().getSimpleName());
+            return false;
+        }
+    }
+
+    /** Whoever this phone has taken off something lately, told again. Blocking. See {@link NoteStore#removals}. */
+    static void removedAgain(Context where,NoteStore store,Keys keys) {
+        for(NoteStore.Leaving one:store.removals()) {
+            try {
+                NoteStore.Contact them=null;
+                for(NoteStore.Contact known:store.addresses())if(known.address.equals(one.address))them=known;
+                if(them==null||them.agreement.length==0||!doesSpeak(where,them))continue;
+                saidOff(where,keys,them,sixteen(one.note),one.at,Receipt.removed(one.scope));
+            } catch(Exception notNow) {
+                android.util.Log.w("Mininotes/Post","could not say again that they are off this: "
                     +notNow.getClass().getSimpleName());
             }
         }
@@ -562,6 +610,17 @@ final class Post {
                 return Landed.left(from.name+" unfollowed a "+(leftAt==Sharing.Scope.PAGE?"note"
                     :leftAt==Sharing.Scope.BOOK?"book":"collection")+".",id);
             }
+            Sharing.Scope offAt=Receipt.removedScope(about);
+            if(offAt!=null) {
+                // Somebody says this phone is off a thing of theirs. Whether they may say so is the
+                // notebook's to check; when they decided it rides where a revision does.
+                boolean any=store.takenOff(from.address,id,offAt,opened.revision);
+                android.util.Log.i("Mininotes/Post","they say this phone is off a "+offAt.name().toLowerCase(java.util.Locale.ROOT)
+                    +(any?"":" - which changes nothing here"));
+                if(!any)return new Landed(null,null);
+                return Landed.left(from.name+" removed you from a "+(offAt==Sharing.Scope.PAGE?"note"
+                    :offAt==Sharing.Scope.BOOK?"book":"collection")+". Your copy stays on this phone.",id);
+            }
             if(about!=0&&about!=Receipt.HAVE&&about!=Receipt.TOOK)return new Landed(null,null);   // a later build
             if(about!=0) {
                 boolean believed=store.acknowledged(from.address,id,opened.revision,about==Receipt.TOOK);
@@ -595,7 +654,8 @@ final class Post {
                     ?"not taken in: this phone has left it, and they are told again"
                     :"not taken in: this phone has unsubscribed from it");
                 // They had not heard, or it went before they did. Said again, or they go on sending.
-                if(refused.gone&&doesSpeak(where,from))tellLeft(where,keys,from,opened.page,refused.at,refused.scope());
+                if(refused.gone&&doesSpeak(where,from))
+                    tellOff(where,keys,from,opened.page,refused.at,Receipt.left(refused.scope()));
                 return new Landed(null,null);
             }
             // Who else has it, folded in before the note itself: the list is what says whether this phone
@@ -604,6 +664,19 @@ final class Post {
             // Something of theirs is here, so whatever was accepted has been answered and need not be
             // said again.
             store.answered(from.address);
+            // What they may do with it here decides what becomes of what they sent. A reader's words are
+            // not written down, and neither are those of somebody taken off - who is told again, since
+            // they plainly had not heard. Both are answered all the same, or they would send the same
+            // thing every quarter of an hour for ever, which is the fault Pause still has.
+            Sharing.Rule may=store.standingOf(from.address,id,parcel);
+            if(may==null||!may.level.writes()) {
+                android.util.Log.i("Mininotes/Post","not taken in: "+(may==null?"they were never given this"
+                    :may.level==Sharing.Level.GONE?"they were taken off this, and are told again":"they may only read this"));
+                if(parcel.answer){speaks(where,from);answer(where,keys,from,opened.page,opened.revision,false);}
+                if(may!=null&&may.level==Sharing.Level.GONE&&store.saysWhoHas(may.scope,may.target)&&doesSpeak(where,from))
+                    tellOff(where,keys,from,opened.page,may.changed,Receipt.removed(may.scope));
+                return Landed.people(id);
+            }
             // What the note said before, so that one which arrives saying the same - sent only to carry
             // a change in who may do what - is not announced as "updated a note".
             NoteStore.Note before=store.get(id);
