@@ -224,7 +224,7 @@ Until then a file is `▫` — on this device only — whatever the note it sits
 
 The pad runs its own Maxima node: the transport's core is vendored into the app, started with it, and attaches to the public relays. `⋮` → **Profile** shows the address it was given, the code another device scans, and a checklist of what is and is not working — whether a relay has answered, whether there is anybody to send to, whether their keys are known.
 
-Seen between a Pixel 7 Pro and a GrapheneOS Pixel 7, in both directions: scanned, accepted, granted, sent, carried by a public relay, opened, filed on the right shelf, marked, and merged into a page that was open at the time. [ANDROID-VERIFICATION.md](ANDROID-VERIFICATION.md) has each of those with the build it was seen on.
+Seen between a Pixel 7 Pro and a GrapheneOS Pixel 7, in both directions: scanned, accepted, granted, sent, carried by a public relay, opened, filed on the right shelf, marked, and merged into a page that was open at the time. Each of those is recorded with the build it was seen on, in a verification log the maintainer keeps privately.
 
 ## Staying up while the pad is closed
 
