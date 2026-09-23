@@ -82,4 +82,46 @@ public class UpdateTest {
     @Test public void aClockSetBackDoesNotMeanNeverAskingAgain() {
         assertTrue(Update.due(1_000L,5_000L));
     }
+
+    // ---- where the build is, and whether it is the one it says -----------------------------------------------
+
+    private static final String SOURCE="https://github.com/Charles0xhorizonxyz/mininotes";
+
+    @Test public void theBuildIsWhereTheWorkflowPutsIt() {
+        assertEquals(SOURCE+"/releases/download/v0.0.108/Mininotes-0.0.108.apk",Update.asset(SOURCE,"0.0.108"));
+        // A tag or a line with air round it names the same file; a trailing slash on the source does no harm.
+        assertEquals(Update.asset(SOURCE,"0.0.108"),Update.asset(SOURCE+"/","v0.0.108\n"));
+    }
+
+    @Test public void nothingIsFetchedForAVersionThatIsNotOne() {
+        assertEquals("",Update.asset(SOURCE,"<!DOCTYPE html>"));
+        assertEquals("",Update.asset(SOURCE,""));
+        assertEquals("",Update.asset("","0.0.108"));
+    }
+
+    @Test public void theChecksumIsReadTheWayItIsWritten() {
+        String hex="d4f92f4bb64a87a024985ecb9919d2e8697e51a2370f3461d9c9e65cf393e8af";
+        assertEquals(hex,Update.digest(hex+"  Mininotes-0.0.108.apk\n"));
+        assertEquals(hex,Update.digest(hex+" *Mininotes-0.0.108.apk\r\n"));
+        assertEquals(hex,Update.digest(hex.toUpperCase(java.util.Locale.ROOT)));
+        assertEquals(hex,Update.digest(" "+hex+" "));
+    }
+
+    @Test public void aPageInPlaceOfTheChecksumMatchesNoFile() {
+        assertEquals("",Update.digest("<!DOCTYPE html>"));
+        assertEquals("",Update.digest("404: Not Found"));
+        assertEquals("",Update.digest(""));
+        assertEquals("",Update.digest(null));
+        // Sixty-three digits, sixty-five, and sixty-four run into a word are not a checksum either.
+        String hex="d4f92f4bb64a87a024985ecb9919d2e8697e51a2370f3461d9c9e65cf393e8af";
+        assertEquals("",Update.digest(hex.substring(1)));
+        assertEquals("",Update.digest(hex+"0"));
+        assertEquals("",Update.digest(hex+"x"));
+    }
+
+    @Test public void bytesAreWrittenAsTheChecksumIs() {
+        assertEquals("00ff10ab",Update.hex(new byte[]{0,(byte)0xff,0x10,(byte)0xab}));
+        assertEquals("",Update.hex(new byte[0]));
+        assertEquals("",Update.hex(null));
+    }
 }

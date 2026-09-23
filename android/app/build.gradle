@@ -6,8 +6,8 @@ android {
         applicationId 'org.mininotes.android'
         minSdk 28
         targetSdk 35
-        versionCode 108
-        versionName '0.0.108'
+        versionCode 109
+        versionName '0.0.109'
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 

@@ -68,6 +68,41 @@ final class Update {
         return lastLooked<=0||lastLooked>now||now-lastLooked>=EVERY;
     }
 
+    /**
+     * Where the published build of a version is, given where the source is. The Release workflow names
+     * the file after the tag and puts a checksum beside it under the same name plus {@code .sha256}, so
+     * both are known from the version alone and nothing has to ask the repository what it published.
+     */
+    static String asset(String source,String version) {
+        String said=read(version);
+        if(source==null||source.isEmpty()||said.isEmpty())return "";
+        String base=source.endsWith("/")?source.substring(0,source.length()-1):source;
+        return base+"/releases/download/v"+said+"/Mininotes-"+said+".apk";
+    }
+
+    /**
+     * The checksum out of the line the workflow writes - {@code sha256sum} style, sixty-four hex digits
+     * and then the file's name - or nothing where the line is not that. A page that came back in place
+     * of the file is nothing, and nothing never matches a file, so nothing is ever installed on its say-so.
+     */
+    static String digest(String line) {
+        if(line==null)return "";
+        String said=line.trim();
+        int end=0;
+        while(end<said.length()&&Character.digit(said.charAt(end),16)>=0)end++;
+        if(end!=64)return "";
+        if(end<said.length()&&!Character.isWhitespace(said.charAt(end)))return "";
+        return said.substring(0,64).toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /** Bytes as lower-case hex, the way a checksum is written down. */
+    static String hex(byte[] raw) {
+        if(raw==null)return "";
+        StringBuilder out=new StringBuilder(raw.length*2);
+        for(byte b:raw)out.append(Character.forDigit((b>>4)&0xf,16)).append(Character.forDigit(b&0xf,16));
+        return out.toString();
+    }
+
     private static long[] numbers(String version) {
         if(version.isEmpty())return null;
         String[] parts=version.split("\\.");

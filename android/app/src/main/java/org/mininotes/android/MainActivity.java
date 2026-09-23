@@ -596,6 +596,8 @@ public final class MainActivity extends Activity {
         super.onCreate(state);store=NoteStore.of(this);background=new Background(handler::post);
         network=new Background(handler::post);chores=new Background(handler::post);
         lookout=new Background(handler::post);
+        // A build that was handed to Android at the last opening is, if it took, the one running now.
+        afterUpdate();
         // Listening before anything is sent, so a reply to the first thing this app sends is not the one
         // message that lands with nobody there to hear it.
         listenForNotes();
@@ -3910,7 +3912,7 @@ public final class MainActivity extends Activity {
         body.addView(label("Mininotes v"+version(),READING,INK));
         final String newer=newerKnown();
         if(!newer.isEmpty()) {
-            TextView out=tap("v"+newer+" is out","Open the download page",READING,ACCENT,v->openAddress(DOWNLOAD));
+            TextView out=tap("v"+newer+" is out","Update",READING,ACCENT,v->announce(newer));
             out.setPadding(0,0,0,0);out.setGravity(Gravity.START);body.addView(out);
         }
         body.addView(gap(6));
@@ -3952,8 +3954,10 @@ public final class MainActivity extends Activity {
                         .putBoolean("update_look",kept).apply();return null;},done->{},e->{});
                 }));
             body.addView(label("One line of text is read from the repository when the pad is opened. Nothing "
-                +"is sent with it, nothing is downloaded and nothing is installed. Off, it looks only when "
-                +"you tap the button below.",QUIET,MUTED));
+                +"is sent with it, and nothing is fetched until you tap Update: then the build is fetched "
+                +"from the repository's release, checked against its checksum and its signing key, and "
+                +"handed to Android, which asks before installing. Off, it looks only when you tap the "
+                +"button below.",QUIET,MUTED));
         }
         AlertDialog.Builder box=new Box().setTitle("About").setView(scrolling(body));
         if(!SOURCE.isEmpty())box.setPositiveButton("Check for a newer version",(d,w)->checkForUpdate());
@@ -4054,12 +4058,167 @@ public final class MainActivity extends Activity {
         return Update.newer(said,version())?Update.read(said):"";
     }
 
-    /** Says there is a newer build, and where. The app downloads nothing and installs nothing itself. */
-    private void announce(String newest) {
+    /**
+     * Says there is a newer build, and offers to bring it here.
+     *
+     * <p>It used to send the person to the release page and stop: find the file, download it, open it,
+     * answer Android. Now the pad does the fetching and the checking, and Android does the asking - the
+     * one step that is rightly not the app's to skip. Before anything is handed over: the file matches the
+     * checksum published beside it, it is this app and a later build of it, and it is signed with the key
+     * this build was signed with - which Android insists on anyway, and which is better said in words than
+     * as an error from the installer.
+     */
+    private void announce(final String newest) {
         new Box().setTitle("v"+newest+" is out")
-            .setMessage("This phone has v"+version()+".\n\nNothing is downloaded or installed from here. The "
-                +"button opens the page the new build is on.")
-            .setPositiveButton("Open the download page",(d,w)->openAddress(DOWNLOAD)).show();
+            .setMessage("This phone has v"+version()+".\n\nUpdate fetches the build from the repository, "
+                +"checks it, and hands it to Android, which asks before installing.")
+            .setNegativeButton("Not now",(d,w)->{})
+            .setPositiveButton("Update",(d,w)->fetchUpdate(newest)).show();
+    }
+
+    /** Where a fetched build waits to be handed over. Emptied at every opening: nothing is kept here. */
+    private File updates(){return new File(getCacheDir(),"update");}
+
+    /** More than any build of this will be. A file bigger than this is not the build, whatever it is. */
+    private static final long BUILD_MOST=64L*1024*1024;
+
+    private void fetchUpdate(final String newest) {
+        if(SOURCE.isEmpty())return;
+        final int job=busy("Fetching v"+newest+"…");
+        lookout.submit(()->{
+            File dir=updates();
+            if(!dir.isDirectory()&&!dir.mkdirs())throw new IllegalStateException("Nowhere on this phone to put the file.");
+            final File apk=new File(dir,"Mininotes-"+newest+".apk");
+            String digest,got;
+            try {
+                // The checksum first: it is small, and a release without one is not one to fetch from.
+                digest=Update.digest(fetchText(Update.asset(SOURCE,newest)+".sha256"));
+                if(digest.isEmpty())throw new IllegalStateException("The release carries no readable checksum, so the file could not be checked. Nothing was installed.");
+                got=fetchFile(Update.asset(SOURCE,newest),apk,job,newest);
+            } catch(java.io.IOException notNow) {
+                apk.delete();
+                throw new IllegalStateException("Could not reach the repository. Nothing was changed.");
+            }
+            if(!got.equals(digest)){apk.delete();throw new IllegalStateException("The file did not match the checksum published beside it. Nothing was installed.");}
+            busySay(job,"Checking v"+newest+"…");
+            android.content.pm.PackageManager packages=getPackageManager();
+            @SuppressWarnings("deprecation")
+            android.content.pm.PackageInfo theirs=packages.getPackageArchiveInfo(apk.getPath(),
+                android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES);
+            if(theirs==null||!getPackageName().equals(theirs.packageName)){apk.delete();throw new IllegalStateException("The file is not this app. Nothing was installed.");}
+            android.content.pm.PackageInfo mine=packages.getPackageInfo(getPackageName(),
+                android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES);
+            if(theirs.getLongVersionCode()<=mine.getLongVersionCode()){apk.delete();throw new IllegalStateException("The published build is not later than this one. Nothing was installed.");}
+            // Android will refuse a build signed with another key, and rightly; said here in words instead.
+            String theirKey=signerOf(theirs), myKey=signerOf(mine);
+            if(!theirKey.isEmpty()&&!myKey.isEmpty()&&!theirKey.equals(myKey)) {
+                apk.delete();
+                throw new IllegalStateException("The published build is signed with a different key from this one, "
+                    +"so Android will not install it over this build. This is a development build: the published "
+                    +"one has to be installed on its own, after a backup.");
+            }
+            busySay(job,"Handing it to Android…");
+            install(apk,newest);
+            return null;
+        },done->busyDone(job,"Android asks you to confirm"),e->{
+            busyDone(job,null);
+            new Box().setTitle("Could not update")
+                .setMessage(e.getMessage()==null?"Something went wrong fetching it. Nothing was changed.":e.getMessage())
+                .setNegativeButton("Not now",(d,w)->{})
+                .setPositiveButton("Open the download page",(d,w)->openAddress(DOWNLOAD)).show();
+        });
+    }
+
+    /** A small file of text from the repository, or an exception. Nothing is sent with the request. */
+    private String fetchText(String address) throws java.io.IOException {
+        java.net.HttpURLConnection call=(java.net.HttpURLConnection)new java.net.URL(address).openConnection();
+        call.setConnectTimeout(8000);call.setReadTimeout(8000);call.setRequestProperty("Accept","text/plain");
+        try(InputStream in=call.getInputStream()) {
+            ByteArrayOutputStream held=new ByteArrayOutputStream();
+            byte[] part=new byte[256];int n;
+            while((n=in.read(part))!=-1&&held.size()<4096)held.write(part,0,n);
+            return new String(held.toByteArray(),StandardCharsets.UTF_8);
+        } finally {call.disconnect();}
+    }
+
+    /**
+     * The build itself, to a file, saying how far it has got as it goes.
+     *
+     * @return the SHA-256 of what was written, as hex, worked out as the bytes went by
+     */
+    private String fetchFile(String address,File into,int job,String newest) throws java.io.IOException {
+        java.net.HttpURLConnection call=(java.net.HttpURLConnection)new java.net.URL(address).openConnection();
+        call.setConnectTimeout(15000);call.setReadTimeout(30000);
+        try {
+            java.security.MessageDigest sum=java.security.MessageDigest.getInstance("SHA-256");
+            long whole=call.getContentLengthLong(), sofar=0, said=-1;
+            try(InputStream in=new BufferedInputStream(call.getInputStream());OutputStream out=new FileOutputStream(into)) {
+                byte[] part=new byte[65536];int n;
+                while((n=in.read(part))!=-1) {
+                    sofar+=n;
+                    if(sofar>BUILD_MOST)throw new IllegalStateException("The file is far larger than a build of this. Nothing was installed.");
+                    out.write(part,0,n);sum.update(part,0,n);
+                    long pct=whole>0?sofar*100/whole:-1;
+                    if(pct!=said&&pct%5==0){said=pct;busySay(job,"Fetching v"+newest+" · "+pct+"%");}
+                }
+            }
+            return Update.hex(sum.digest());
+        } catch(java.security.NoSuchAlgorithmException never) {
+            throw new IllegalStateException("This phone cannot work out a checksum.");
+        } finally {call.disconnect();}
+    }
+
+    /** The SHA-256 of the certificate a build is signed with, as hex, or empty where it cannot be read. */
+    private static String signerOf(android.content.pm.PackageInfo info) {
+        try {
+            android.content.pm.SigningInfo signing=info==null?null:info.signingInfo;
+            if(signing==null)return "";
+            android.content.pm.Signature[] all=signing.getApkContentsSigners();
+            if(all==null||all.length==0)return "";
+            return Update.hex(java.security.MessageDigest.getInstance("SHA-256").digest(all[0].toByteArray()));
+        } catch(Exception unreadable){return "";}
+    }
+
+    /**
+     * Handed to Android's installer, which asks the person and answers to {@link Installing}. The version
+     * being installed is written down first, so the new build can say it has arrived when it opens.
+     */
+    private void install(File apk,String newest) throws Exception {
+        android.content.pm.PackageInstaller installer=getPackageManager().getPackageInstaller();
+        android.content.pm.PackageInstaller.SessionParams params=new android.content.pm.PackageInstaller.SessionParams(
+            android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+        params.setAppPackageName(getPackageName());
+        params.setSize(apk.length());
+        int id=installer.createSession(params);
+        try(android.content.pm.PackageInstaller.Session session=installer.openSession(id)) {
+            try(OutputStream out=session.openWrite(apk.getName(),0,apk.length());
+                InputStream in=new java.io.FileInputStream(apk)) {
+                byte[] part=new byte[65536];int n;
+                while((n=in.read(part))!=-1)out.write(part,0,n);
+                session.fsync(out);
+            }
+            getSharedPreferences("settings",MODE_PRIVATE).edit().putString("update_installing",newest).apply();
+            Intent told=new Intent(this,Installing.class).setAction(Installing.STATUS);
+            // Mutable, because the installer writes its answer into it; explicit, so nobody else can.
+            int flags=android.app.PendingIntent.FLAG_UPDATE_CURRENT
+                |(android.os.Build.VERSION.SDK_INT>=31?android.app.PendingIntent.FLAG_MUTABLE:0);
+            session.commit(android.app.PendingIntent.getBroadcast(this,0,told,flags).getIntentSender());
+        }
+    }
+
+    /**
+     * After an update: the build that was handed to Android is the one running now, so it is said once.
+     * And whatever was fetched is cleared away, whether or not it was installed.
+     */
+    private void afterUpdate() {
+        final android.content.SharedPreferences kept=getSharedPreferences("settings",MODE_PRIVATE);
+        String asked=kept.getString("update_installing","");
+        if(!asked.isEmpty()) {
+            if(asked.equals(version()))toast("Updated to v"+asked);
+            kept.edit().remove("update_installing").apply();
+        }
+        chores.submit(()->{File[] left=updates().listFiles();if(left!=null)for(File one:left)one.delete();return null;},
+            done->{},e->{});
     }
 
     /**

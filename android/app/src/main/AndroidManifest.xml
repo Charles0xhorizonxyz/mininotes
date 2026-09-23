@@ -19,8 +19,14 @@
          you share - sealed for the device it is going to before it leaves, so a relay handles bytes it
          cannot read. And the update check, which is one line of text read from the repository: once a day
          when the pad is opened, which About can switch off, and whenever somebody taps for it. Nothing is
-         sent with it. Nothing that is not shared ever leaves the phone. -->
+         sent with it. Nothing that is not shared ever leaves the phone. When somebody taps Update, and
+         only then, the published build is fetched from the repository's release, checked against the
+         checksum beside it and against this build's own signing key, and handed to Android's installer,
+         which asks before anything is installed. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- To hand a fetched build to Android's installer. Android still asks the person every time, and the
+         first time asks them to allow this app to do so at all. Nothing is installed without both. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- To go on listening for notes while the pad is closed, which Android allows on condition that it
          says so for as long as it lasts. Only while there is a device paired to hear from, and it can be
          switched off in Profile or from the notification itself. -->
@@ -54,5 +60,9 @@
         <!-- Where the transport addresses its replies. Exported because it names this class, and it holds
              nothing: the live listener is registered while a question is outstanding. -->
         <receiver android:name=".MaximaConnection$Answers" android:exported="true" />
+        <!-- Where Android's installer answers about a build the pad handed it: nearly always "ask them",
+             with the screen to show. Not exported: the installer reaches it through an intent this app
+             signed itself. -->
+        <receiver android:name=".Installing" android:exported="false" />
     </application>
 </manifest>
