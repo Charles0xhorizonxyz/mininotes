@@ -1,9 +1,9 @@
 # Contributing
 
-Mininotes is licensed under the terms in [LICENSE](LICENSE): free to use, change
-and pass on, and not to be sold or put inside anything sold. Submit only work
-you have the right to contribute under those terms, and keep third-party
-attribution intact. No copyright assignment is asked for.
+Mininotes is free software under the GNU General Public License, version 3 or
+later ([LICENSE](LICENSE)). By contributing you agree that your work is
+published under that licence. Submit only work you have the right to
+contribute, and keep third-party attribution intact. No copyright assignment is asked for.
 
 ## Saying something without writing code
 

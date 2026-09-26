@@ -5,7 +5,7 @@ issues, labelled `feedback`. Open, readable by anyone, answerable by anyone, and
 countable — so "three people said this" is a fact rather than a feeling.
 
 Read the whole lot:
-<https://github.com/Charles0xhorizonxyz/mininotes/issues?q=is%3Aissue+label%3Afeedback>
+<https://github.com/mininotesorg/mininotes/issues?q=is%3Aissue+label%3Afeedback>
 
 ## From the app
 
@@ -47,7 +47,7 @@ you type rather than in small print underneath.
 - Nothing from a backup file.
 
 A **security** problem does not go here. Report it privately:
-<https://github.com/Charles0xhorizonxyz/mininotes/security/advisories/new>
+<https://github.com/mininotesorg/mininotes/security/advisories/new>
 
 ## The Minima address field
 

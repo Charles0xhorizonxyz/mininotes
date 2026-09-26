@@ -19,10 +19,10 @@ from one phone to the other, so where none can be reached, nothing goes. On its
 own, the pad still works: it opens on a ruled page with the cursor already in
 it, keeps what you write the moment you write it, and needs no connection at all.
 
-[![Latest release](https://img.shields.io/github/v/release/Charles0xhorizonxyz/mininotes?label=latest%20build)](https://github.com/Charles0xhorizonxyz/mininotes/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/mininotesorg/mininotes?label=latest%20build)](https://github.com/mininotesorg/mininotes/releases/latest)
 
 **Latest build:** the badge above names it, and
-[Releases](https://github.com/Charles0xhorizonxyz/mininotes/releases/latest) has the file.
+[Releases](https://github.com/mininotesorg/mininotes/releases/latest) has the file.
 The app tells you itself when a newer one is out: it looks once a day, says so in
 one line, and keeps **Update to v…** in the **⋮** menu until you have it.
 
@@ -31,7 +31,7 @@ one line, and keeps **Update to v…** in the **⋮** menu until you have it.
 ## Install it
 
 1. Download `Mininotes-<version>.apk` from
-   [the latest release](https://github.com/Charles0xhorizonxyz/mininotes/releases/latest).
+   [the latest release](https://github.com/mininotesorg/mininotes/releases/latest).
 2. Check it is the file that was published:
 
    ```sh
@@ -42,7 +42,7 @@ one line, and keeps **Update to v…** in the **⋮** menu until you have it.
    wherever you downloaded it; that permission is per-app and can be switched
    back off afterwards.
 
-Android 9 (API 28) or newer. Under 2 MB. No account, no sign-in, no analytics and
+Android 9 (API 28) or newer. No account, no sign-in, no analytics and
 no advertising identifier. Two things use the network and nothing else does: the
 pad's own Maxima node, which carries what you share, and the update check, which
 reads one line of text from this repository, once a day when the pad is opened
@@ -80,11 +80,11 @@ for anyone but the owner, which tells the others.
 Once a phone is paired with anything, the pad goes on listening after it is
 closed. Android shows a notification for as long as that lasts. **⋮ → Profile →
 Listen while the pad is closed** switches it off, and so does **Stop listening**
-on the notification. It hears while the phone is awake or charging; once Android
-puts the phone into its deep sleep the network is cut for every app that has not
-been exempted from battery optimisation, and Mininotes does not ask to be. What
-somebody wrote in the meantime reaches you the next time they write in that
-note, since a note travels whole. [docs/SHARING.md](docs/SHARING.md) says
+on the notification. **Keep listening while the phone sleeps** (Profile) asks
+Android to let Mininotes through its deep sleep and wakes it for a moment every
+few minutes; without it, the pad hears while the phone is awake or charging.
+Whatever was sent in the meantime is sent again until your phone answers, and
+another of your devices that is on can carry it to you. [docs/SHARING.md](docs/SHARING.md) says
 plainly what is not built yet, and the first item on that list is the one to
 read before trusting this with anything two people both write in.
 
@@ -116,8 +116,10 @@ other.
 - **Finds.** Search across the whole pad, your favourites, what you wrote in
   lately, and **Tree view** — every collection, book and note at once.
 
-Notes are **not encrypted at rest**. Protect the phone. Maxima supplies
-encrypted transport; this is not an encrypted vault.
+**Lock Mininotes** (⋮ → Security) and the notebook, its attachments and your
+backups are encrypted on the device (SQLCipher). It then opens with your
+fingerprint or screen lock, with a backup password and 12 recovery words as
+spare keys. Every note is also sealed end to end on its way to another device.
 
 ---
 
@@ -127,7 +129,7 @@ encrypted transport; this is not an encrypted vault.
 app it is about, write it, and tap **Post it** — that opens a filled-in form here
 under your own name. Everything anybody has said is in one place:
 
-<https://github.com/Charles0xhorizonxyz/mininotes/issues?q=is%3Aissue+label%3Afeedback>
+<https://github.com/mininotesorg/mininotes/issues?q=is%3Aissue+label%3Afeedback>
 
 The app never posts for you and sends nothing by itself: it builds a web address
 out of what you typed and hands it to the browser. What travels with a report is
@@ -135,7 +137,7 @@ one line — version, Android version, phone — shown to you before you send it
 Reports are public, so say what the app did rather than who you are.
 
 A **security** problem goes privately to
-[a security advisory](https://github.com/Charles0xhorizonxyz/mininotes/security/advisories/new),
+[a security advisory](https://github.com/mininotesorg/mininotes/security/advisories/new),
 not to an issue.
 
 [docs/FEEDBACK.md](docs/FEEDBACK.md) has the rest.
@@ -143,6 +145,16 @@ not to an issue.
 ---
 
 ## Build it yourself
+
+### Windows preview
+
+The Windows desktop build lives in [windows/](windows/README.md). On Windows
+with JDK 17, run `./windows/build.ps1 -Package`; extract the resulting
+`dist/latest/Mininotes-Windows-0.0.021.zip` and open `Mininotes/Mininotes.exe`.
+The bundle includes Java. It is a preview: what was checked on which build is
+recorded before each release in a log the maintainer keeps privately.
+
+### Android
 
 You need JDK 17 and the Android SDK (compileSdk 36, build-tools for AGP 8.10.1).
 
@@ -181,32 +193,34 @@ names their phones and quotes their notes. Ask in an issue for the entry for a b
 | Path | What is in it |
 | --- | --- |
 | [android/](android/) | The Android app. Everything below is about it. |
+| [windows/](windows/README.md) | Windows desktop preview and packaging. |
 | [android/app/src/main/java/org/mininotes/android/](android/app/src/main/java/org/mininotes/android/) | All the code. No XML layouts; the views are built in Java. |
 | [docs/PRODUCT.md](docs/PRODUCT.md) | What the app is for, and what it is not. |
 | [docs/SHARING.md](docs/SHARING.md) | The sync design: keys, pairing, merge, conflicts. |
 | [app/](app/) | The older MiniDapp, kept for anybody still running it. Not developed. |
 
-The app has no AndroidX, no Compose, no XML layouts and one third-party runtime
-dependency (ZXing, for QR codes). It is built that way so the whole thing can be
-read.
+The app has no Compose and no XML layouts, and few third-party runtime
+dependencies: ZXing for QR codes, and SQLCipher with AndroidX SQLite for the
+encrypted notebook. It is built that way so the whole thing can be read.
 
 ---
 
 ## Licence
 
-Free to read, use, change and pass on. **It may not be sold, and it may not be
-put inside anything that is sold.** That is the Apache License 2.0 with the
-Commons Clause and a paid-product condition; the whole text is in
-[LICENSE](LICENSE), and third-party terms are in [NOTICE](NOTICE).
+Mininotes is **free and open-source software** under the
+[GNU General Public License, version 3 or later](LICENSE). You may use it,
+study it, change it and pass it on, and sell it too - but whatever you pass on,
+changed or not, goes with its source code under the same licence. Third-party
+terms are in [NOTICE](NOTICE).
 
 The Maxima transport inside the app is the core of
 [eurobuddha/maxima](https://github.com/eurobuddha/maxima), vendored unmodified
 with its author's permission and credited in NOTICE. It is theirs, and is not
-under this licence.
+under the GPL; its own repository does not yet carry a licence.
 
-Because of that restriction this is *source-available*, not "open source" as the
-OSI defines it, so F-Droid and similar channels will not carry a build. If you
-want Mininotes inside a paid product, ask.
+Until 26 September 2026 Mininotes was source-available (Apache 2.0 with the
+Commons Clause and a paid-product condition); copies taken before then keep
+those terms.
 
 Contributions: [CONTRIBUTING.md](CONTRIBUTING.md).
 Security reports: [SECURITY.md](SECURITY.md).

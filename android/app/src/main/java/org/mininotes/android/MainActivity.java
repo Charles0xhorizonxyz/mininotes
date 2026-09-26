@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: LicenseRef-Mininotes-NoPaidProducts
-// Apache-2.0 with the Commons Clause and a paid-product condition. See LICENSE.
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Mininotes is free software: GNU General Public License, version 3 or later. See LICENSE.
 package org.mininotes.android;
 
 import android.app.Activity;
@@ -103,7 +103,7 @@ public final class MainActivity extends Activity {
      * Where the source lives, and where a newer build would be announced. Empty until there is a repository:
      * while it is, nothing is fetched and the network is never touched.
      */
-    private static final String SOURCE="https://github.com/Charles0xhorizonxyz/mininotes";
+    private static final String SOURCE="https://github.com/mininotesorg/mininotes";
     /** The one file the update check reads: a line of text holding the newest version's name. */
     private static final String LATEST=SOURCE.isEmpty()?"":SOURCE.replace("github.com","raw.githubusercontent.com")
         +"/main/dist/latest.txt";
@@ -161,6 +161,14 @@ public final class MainActivity extends Activity {
     private String nameNext="";
     /** A blank note is waiting to be written on, and the keyboard is still owed to it. */
     private boolean wantKeyboard;
+    /** On the unlock page: the notebook is locked and not open yet, and nothing else of the screen exists. */
+    private boolean lockedOut;
+    /** Profile's "Keep listening while the phone sleeps", while Profile is open; and what it says under it. */
+    private android.widget.Switch sleepSwitch;
+    private TextView sleepSays;
+    private boolean quietSwitch;
+    /** The blank page's own ask for the keyboard, kept so a note that arrives to be read can take it back. */
+    private final Runnable raise=this::writeOn;
     /** The mark beside the dots, and how to ask again what it should say. */
     private View owedMark;
     private Runnable owedAsk;
@@ -168,6 +176,8 @@ public final class MainActivity extends Activity {
     private NoteStore.Branch.Kind attachingTo=NoteStore.Branch.Kind.PAGE;
     private String attachingToId="";
     private TextView status;
+    private TextView syncTimes;
+    private SyncStatus.State syncState;
     /** The open note's name, in the bar. */
     private TextView named;
     private NoteStore.Note active;
@@ -470,7 +480,15 @@ public final class MainActivity extends Activity {
         if(keys!=null)keys.showSoftInput(page,0);
     }
 
-    private void focus(){page.requestFocus();page.post(this::writeOn);}
+    private void focus(){page.requestFocus();page.post(raise);}
+    /** Takes back a keyboard nobody tapped for: the asks still waiting, and the one already up. */
+    private void quiet() {
+        wantKeyboard=false;keyboard(false);
+        if(page==null)return;
+        page.removeCallbacks(raise);
+        InputMethodManager keys=(InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);
+        if(keys!=null)keys.hideSoftInputFromWindow(page.getWindowToken(),0);
+    }
 
     /** The last three rungs are dark papers, where every element colour takes its lighter strength. */
     private boolean darkPaper(){return paper>=PAPERS.length-3;}
@@ -482,6 +500,395 @@ public final class MainActivity extends Activity {
     }
 
     /** Takes one paper into use. Drawing from these fields is what makes the app follow it. */
+    // ---- the password lock ---------------------------------------------------------------------------------
+
+    /**
+     * The page Mininotes opens on while its notebook is locked: the password, and nothing of the notebook
+     * behind it. Opening is quiet; only a wrong password is said in the warning colour.
+     */
+    private void unlockScreen() {
+        LinearLayout body=column();body.setPadding(dp(28),dp(72),dp(28),dp(28));body.setBackgroundColor(PAPER);
+        android.widget.ImageView mark=new android.widget.ImageView(this);mark.setImageResource(R.drawable.ic_note);
+        // Gaps given their height outright: this page fills the screen, and a plain View would take all of it.
+        body.addView(mark,new LinearLayout.LayoutParams(dp(56),dp(56)));body.addView(gap(18),new LinearLayout.LayoutParams(-1,dp(18)));
+        TextView title=label("Mininotes is locked",Math.round(READING*1.4f),INK);title.setTypeface(null,android.graphics.Typeface.BOLD);body.addView(title);
+        final boolean bio=android.os.Build.VERSION.SDK_INT>=30&&PhoneLock.hasBio(this);
+        body.addView(gap(6),new LinearLayout.LayoutParams(-1,dp(6)));
+        body.addView(label(bio?"Use your fingerprint or screen lock, or type your backup password.":"Type your password to open your notes.",READING,INK));
+        final EditText password=secret(body,bio?"Backup password":"Password");
+        final TextView said=label(" ",QUIET,MUTED);body.addView(said);
+        final Runnable tryIt=()->{
+            said.setTextColor(MUTED);said.setText("Opening…");
+            final char[] typed=password.getText().toString().toCharArray();
+            new Thread(()->{
+                byte[] key=null;long began=System.nanoTime();
+                try{key=Vault.open(PhoneLock.kept(this),typed);}catch(Exception wrong){/* said below */}
+                // How long a password takes to check on this phone: the number to watch if the rounds ever rise.
+                android.util.Log.i("Mininotes/Lock","password checked in "+(System.nanoTime()-began)/1_000_000+" ms");
+                final byte[] opened=key;
+                runOnUiThread(()->{
+                    if(opened==null){said.setTextColor(WARN);said.setText("That password did not open it.");password.selectAll();return;}
+                    NoteStore.unlock(opened);recreate();
+                });
+            },"mininotes-unlock").start();
+        };
+        password.setOnEditorActionListener((v,action,event)->{tryIt.run();return true;});
+        body.addView(primary("Unlock",tryIt));
+        // The phone's own unlock, where it is set up: asked for at once, and a tap away if it was put aside.
+        if(bio) {
+            TextView viaPhone=tap("Use fingerprint or screen lock","Use fingerprint or screen lock",READING,ACCENT,v->unlockWithPhone(said));
+            viaPhone.setGravity(Gravity.START);viaPhone.setPadding(0,dp(8),0,dp(4));body.addView(viaPhone);
+            handler.post(()->unlockWithPhone(said));
+        }
+        TextView forgot=tap("Use recovery words","Use recovery words",READING,ACCENT,v->recoverAtStart());
+        forgot.setGravity(Gravity.START);forgot.setPadding(0,dp(8),0,dp(8));body.addView(forgot);
+        ScrollView page=new ScrollView(this);page.setFillViewport(true);page.setBackgroundColor(PAPER);page.addView(body);
+        setContentView(page);
+    }
+
+    /** A password field with a Show button beside it: what was typed can be seen before it is sent. */
+    private EditText secret(LinearLayout into,String hint) {
+        final EditText field=field(hint,200);
+        final int hidden=android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD;
+        final int shown=android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD;
+        field.setInputType(hidden);field.setTypeface(android.graphics.Typeface.DEFAULT);
+        LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);
+        field.setLayoutParams(new LinearLayout.LayoutParams(0,-2,1));row.addView(field);
+        final TextView show=label("Show",QUIET,ACCENT);show.setPadding(dp(14),dp(18),dp(4),dp(10));
+        show.setContentDescription("Show the password");
+        show.setOnClickListener(v->{
+            boolean now=field.getInputType()==hidden;int at=field.getSelectionEnd();
+            field.setInputType(now?shown:hidden);field.setTypeface(android.graphics.Typeface.DEFAULT);field.setSelection(Math.max(0,at));
+            show.setText(now?"Hide":"Show");show.setContentDescription(now?"Hide the password":"Show the password");
+        });
+        row.addView(show);into.addView(row);
+        return field;
+    }
+
+    /** The twelve words, then a new password: the lock file sealed again, and the notebook opened. */
+    private void recoverAtStart() {
+        LinearLayout body=inside();
+        body.addView(label("Type the 12 recovery words you wrote down when the lock was set, in order. Then choose a new password.",READING,INK));
+        final EditText words=field("The 12 words",400);words.setSingleLine(false);words.setMinLines(3);
+        words.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE|android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        body.addView(words);
+        final EditText first=secret(body,"New password"),again=secret(body,"The same again");
+        final TextView said=label(" ",QUIET,WARN);body.addView(said);
+        final AlertDialog[] box={null};
+        body.addView(primary("Unlock and set password",()->{
+            String problem=passwordProblem(first,again);if(problem!=null){said.setText(problem);return;}
+            said.setTextColor(MUTED);said.setText("Opening…");
+            final String typed=words.getText().toString();final char[] chosen=first.getText().toString().toCharArray();
+            new Thread(()->{
+                String failed=null;byte[] key=null;
+                try{byte[] kept=PhoneLock.kept(this);key=Vault.recover(kept,typed);PhoneLock.write(PhoneLock.file(this,PhoneLock.KEPT),Vault.newPassword(kept,key,chosen));}
+                catch(Vault.Refused no){failed=no.getMessage();}
+                catch(Exception e){failed="The new password could not be saved. The words still open it.";}
+                final String problemNow=failed;final byte[] opened=key;
+                runOnUiThread(()->{
+                    if(problemNow!=null){said.setTextColor(WARN);said.setText(problemNow);return;}
+                    // The unlock page stays what it is while it goes; the screen that replaces it starts fresh.
+                    box[0].dismiss();NoteStore.unlock(opened);recreate();
+                });
+            },"mininotes-recover").start();
+        }));
+        box[0]=new Box().setTitle("Recovery words").setView(scrolling(body)).create();box[0].show();
+    }
+
+    /**
+     * Android's own prompt - fingerprint, face, or the phone's PIN, pattern or password - over a cipher on the
+     * key that lives in the phone's secure hardware. What the prompt lets through is handed on; nothing else.
+     */
+    private void askPhone(String title,javax.crypto.Cipher cipher,Consumer<javax.crypto.Cipher> allowed,Consumer<String> refused) {
+        if(android.os.Build.VERSION.SDK_INT<30){refused.accept("This phone's Android is too old for this.");return;}
+        android.hardware.biometrics.BiometricPrompt prompt=new android.hardware.biometrics.BiometricPrompt.Builder(this)
+            .setTitle(title).setSubtitle("Mininotes")
+            .setAllowedAuthenticators(android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_STRONG
+                |android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+            .build();
+        prompt.authenticate(new android.hardware.biometrics.BiometricPrompt.CryptoObject(cipher),new android.os.CancellationSignal(),getMainExecutor(),
+            new android.hardware.biometrics.BiometricPrompt.AuthenticationCallback(){
+                @Override public void onAuthenticationSucceeded(android.hardware.biometrics.BiometricPrompt.AuthenticationResult result){allowed.accept(result.getCryptoObject().getCipher());}
+                @Override public void onAuthenticationError(int code,CharSequence why){refused.accept(why==null?"":why.toString());}
+            });
+    }
+
+    /** The notebook opened with the phone's own unlock, or told why not - quietly, the password is right there. */
+    private void unlockWithPhone(final TextView said) {
+        javax.crypto.Cipher cipher;
+        try{cipher=PhoneLock.bioCipher(this,false);}
+        catch(android.security.keystore.KeyPermanentlyInvalidatedException changed) {
+            // A new fingerprint was added to the phone since: the hardware key is gone, by design. Password, then set it up again.
+            PhoneLock.forgetBio(this);said.setTextColor(MUTED);said.setText("The phone's fingerprints changed, so unlocking with them was switched off. Use your password, then switch it on again in Security.");return;
+        } catch(Exception e){said.setTextColor(MUTED);said.setText("Use your password.");return;}
+        askPhone("Unlock your notes",cipher,allowed->{
+            try{NoteStore.unlock(PhoneLock.openBio(this,allowed));recreate();}
+            catch(Exception e){said.setTextColor(WARN);said.setText("That did not open it. Use your password.");}
+        },why->{/* put aside: the password is there */});
+    }
+    private static String passwordProblem(EditText first,EditText again) {
+        String a=first.getText().toString(),b=again.getText().toString();
+        if(a.length()<8)return "Use at least 8 characters.";
+        if(!a.equals(b))return "The two passwords are not the same.";
+        return null;
+    }
+
+    /** The warning, where it cannot be missed. */
+    private TextView lockWarning() {
+        TextView words=label(PhoneLock.WARNING,QUIET,WARN);words.setTypeface(null,android.graphics.Typeface.BOLD);
+        GradientDrawable pale=new GradientDrawable();pale.setColor(mix(WARN,PAPER,0.9f));pale.setCornerRadius(dp(10));
+        words.setBackground(pale);words.setPadding(dp(14),dp(12),dp(14),dp(12));words.setTextIsSelectable(true);
+        LinearLayout.LayoutParams place=new LinearLayout.LayoutParams(-1,-2);place.setMargins(0,dp(14),0,dp(6));words.setLayoutParams(place);
+        return words;
+    }
+
+    /** Whether it is on, what that means, and everything that can be done about it. */
+    private void security() {
+        final boolean on=PhoneLock.locked(this);
+        LinearLayout body=inside();
+        // The lock is one thing; the ways to open it are several, and the phone's own unlock comes first.
+        // A password typed every time is the worst of them, so it is the backup, not the front door.
+        final boolean phone=android.os.Build.VERSION.SDK_INT>=30,bio=phone&&PhoneLock.hasBio(this);
+        TextView state=label(on?"🔒  Locked and encrypted":"Not locked",READING,on?ACCENT:INK);
+        state.setTypeface(null,android.graphics.Typeface.BOLD);body.addView(state);
+        body.addView(under(!on?"Anyone who can read this phone's storage can read your notes. Lock Mininotes to encrypt them"
+                +(phone?"; it then opens with your fingerprint or screen lock.":" with a password.")
+            :bio?"Mininotes opens with your fingerprint or screen lock. Your backup password and your 12 recovery words open it too. Your notes, their files and the backups you export are encrypted."
+            :"Mininotes asks for your backup password when it opens"+(phone?" - switch on fingerprint or screen lock below and you will rarely need it":"")
+                +". Your notes, their files and the backups you export are encrypted."));
+        final AlertDialog[] box={null};
+        body.addView(switchRow("Lock Mininotes",on,want->{box[0].dismiss();if(want)lockOn();else lockOff();}));
+        if(on) {
+            TextView ways=label("Ways to open it",QUIET,MUTED);ways.setPadding(0,dp(14),0,dp(2));body.addView(ways);
+            if(phone)body.addView(switchRow("Fingerprint or screen lock",bio,want->{box[0].dismiss();if(want)phoneUnlockOn();else{PhoneLock.forgetBio(this);toast("Mininotes no longer opens with the phone's unlock");}}));
+            body.addView(tapRow("Backup password: change",()->{box[0].dismiss();changePassword();}));
+            body.addView(tapRow("12 recovery words: show",()->{box[0].dismiss();wordsAgain();}));
+            // Locking again when not used, and Never is one of the choices.
+            final List<String> afterNames=java.util.Arrays.asList(PhoneLock.AFTER_NAMES);
+            int now=0;for(int i=0;i<PhoneLock.AFTER_MINUTES.length;i++)if(PhoneLock.AFTER_MINUTES[i]==PhoneLock.minutes(this))now=i;
+            body.addView(dropRow("Lock again when not used",afterNames,null,now,PhoneLock.AFTER_NAMES[now],picked->
+                getSharedPreferences("settings",MODE_PRIVATE).edit().putInt("autoLock",PhoneLock.AFTER_MINUTES[picked]).apply()));
+        }
+        body.addView(lockWarning());
+        box[0]=new Box().setTitle("Security").setView(scrolling(body)).create();box[0].show();
+    }
+
+    /** Set when the lock has just gone on: the screen drawn again after it asks for the phone's own unlock. */
+    private static boolean offerPhoneUnlock;
+
+    /** Password twice, the words shown once, three asked back, then the notebook encrypted where it is. */
+    private void lockOn() {
+        LinearLayout body=inside();
+        final boolean phone=android.os.Build.VERSION.SDK_INT>=30;
+        body.addView(label(phone
+            ?"Your notes on this phone will be encrypted, and Mininotes will open with your fingerprint or screen lock - you set that up right after this. First choose a backup password, for when the phone's unlock cannot be used. You will also get 12 recovery words, for if you forget it."
+            :"Your notes on this phone will be encrypted. Mininotes will ask for this password each time it opens. You will also get 12 recovery words, for if you forget the password.",READING,INK));
+        body.addView(lockWarning());
+        final EditText first=secret(body,phone?"Backup password":"Password"),again=secret(body,"The same again");
+        final TextView said=label(" ",QUIET,WARN);body.addView(said);
+        final AlertDialog[] box={null};
+        body.addView(primary("Continue",()->{
+            String problem=passwordProblem(first,again);if(problem!=null){said.setText(problem);return;}
+            final char[] chosen=first.getText().toString().toCharArray();box[0].dismiss();
+            final int job=busy("Making your recovery words…");
+            new Thread(()->{
+                Vault.Made made=null;try{made=Vault.make(chosen);}catch(Exception e){/* said below */}
+                final Vault.Made ready=made;
+                runOnUiThread(()->{
+                    busyDone(job,null);
+                    if(ready==null){alert("The lock could not be made. Nothing was changed.");return;}
+                    showWords(ready.words,true,()->checkWords(ready.words,()->encryptNow(ready)));
+                });
+            },"mininotes-lock").start();
+        }));
+        box[0]=new Box().setTitle("Lock Mininotes").setView(scrolling(body)).create();box[0].show();
+    }
+
+    /** The notebook swapped for its encrypted copy; the screen drawn again on it, with no restart. */
+    private void encryptNow(final Vault.Made made) {
+        final int job=busy("Locking the notebook…");
+        background.submit(()->{PhoneLock.encrypt(this,made);return null;},done->{
+            Listening.rehear(this);busyDone(job,"Notebook locked");
+            offerPhoneUnlock=android.os.Build.VERSION.SDK_INT>=30;recreate();
+        },e->{busyDone(job,null);alert("The notebook could not be locked: "+(e.getMessage()==null?"something went wrong":e.getMessage())+". Your notes are as they were.");});
+    }
+
+    /**
+     * The twelve words in one block that can be selected whole, and a button to copy them. The first time,
+     * nothing goes on until "I have written them down"; shown again later, there is nothing to press.
+     */
+    private void showWords(final List<String> words,final boolean first,final Runnable then) {
+        LinearLayout body=inside();
+        body.addView(label(first?"Write these 12 words on paper, in this order, and keep them in a safe place, away from this phone. With them you can open your notes if you forget the password."
+            :"Your 12 recovery words, in order. Keep them in a safe place, away from this phone.",READING,INK));
+        StringBuilder laid=new StringBuilder();
+        for(int i=0;i<words.size();i++){laid.append(String.format(java.util.Locale.ROOT,"%2d. %-9s",i+1,words.get(i)));laid.append(i%2==1?"\n":"  ");}
+        TextView block=label(laid.toString().trim(),READING,INK);block.setTypeface(android.graphics.Typeface.MONOSPACE,android.graphics.Typeface.BOLD);
+        block.setTextIsSelectable(true);block.setContentDescription("Your 12 recovery words");
+        GradientDrawable card=new GradientDrawable();card.setColor(CARD);card.setCornerRadius(dp(12));card.setStroke(Math.max(1,dp(1)),LINE);
+        block.setBackground(card);block.setPadding(dp(16),dp(14),dp(16),dp(14));
+        LinearLayout.LayoutParams place=new LinearLayout.LayoutParams(-1,-2);place.setMargins(0,dp(14),0,dp(8));body.addView(block,place);
+        body.addView(pill("Copy the words",()->{
+            final String plain=String.join(" ",words);
+            ClipboardManager board=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);if(board==null)return;
+            ClipData clip=ClipData.newPlainText("Recovery words",plain);
+            // Marked sensitive, so the phone does not show them in its copy preview.
+            if(android.os.Build.VERSION.SDK_INT>=33){android.os.PersistableBundle extra=new android.os.PersistableBundle();extra.putBoolean("android.content.extra.IS_SENSITIVE",true);clip.getDescription().setExtras(extra);}
+            board.setPrimaryClip(clip);
+            toast("Copied. Paste them somewhere safe now: the clipboard is emptied in one minute.");
+            handler.postDelayed(()->{try{ClipData now=board.getPrimaryClip();if(now!=null&&now.getItemCount()>0&&plain.contentEquals(now.getItemAt(0).coerceToText(this)))board.clearPrimaryClip();}catch(RuntimeException gone){/* something else is there now */}},60_000);
+        }));
+        body.addView(lockWarning());
+        final AlertDialog[] box={null};
+        if(first)body.addView(primary("I have written them down",()->{box[0].dismiss();then.run();}));
+        box[0]=new Box().setTitle(first?"Your recovery words":"Recovery words").setView(scrolling(body)).create();box[0].show();
+    }
+
+    /** Three of the words asked back, so the lock is not put on before they are really written down. */
+    private void checkWords(final List<String> words,final Runnable then) {
+        List<Integer> order=new ArrayList<>();for(int i=0;i<words.size();i++)order.add(i);
+        java.util.Collections.shuffle(order,new java.security.SecureRandom());
+        final List<Integer> asked=new ArrayList<>(order.subList(0,3));java.util.Collections.sort(asked);
+        LinearLayout body=inside();
+        body.addView(label("To be sure they are written down, type these three of your words.",READING,INK));
+        final EditText[] fields=new EditText[3];
+        for(int i=0;i<3;i++){fields[i]=field("Word "+(asked.get(i)+1),20);fields[i].setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);body.addView(fields[i]);}
+        final TextView said=label(" ",QUIET,WARN);body.addView(said);
+        final AlertDialog[] box={null};
+        body.addView(primary("Lock the notebook",()->{
+            for(int i=0;i<3;i++)if(!fields[i].getText().toString().trim().equalsIgnoreCase(words.get(asked.get(i)))){said.setText("Word "+(asked.get(i)+1)+" is not right. Check what you wrote down.");return;}
+            box[0].dismiss();then.run();
+        }));
+        TextView again=tap("Show the words again","Show the words again",READING,ACCENT,v->showWords(words,false,()->{}));
+        again.setGravity(Gravity.START);again.setPadding(0,dp(8),0,dp(8));body.addView(again);
+        box[0]=new Box().setTitle("Check your words").setView(scrolling(body)).create();box[0].show();
+    }
+
+    /** A password asked for once, checked, and the key it opens handed on. */
+    private void withPassword(String title,String message,String yes,final Consumer<byte[]> then) {
+        LinearLayout body=inside();body.addView(label(message,READING,INK));
+        final EditText password=secret(body,"Password");
+        final TextView said=label(" ",QUIET,MUTED);body.addView(said);
+        final AlertDialog[] box={null};
+        body.addView(primary(yes,()->{
+            said.setTextColor(MUTED);said.setText("Opening…");
+            final char[] typed=password.getText().toString().toCharArray();
+            new Thread(()->{
+                byte[] key=null;try{key=Vault.open(PhoneLock.kept(this),typed);}catch(Exception wrong){/* said below */}
+                final byte[] opened=key;
+                runOnUiThread(()->{
+                    if(opened==null){said.setTextColor(WARN);said.setText("That password is not right.");return;}
+                    box[0].dismiss();then.accept(opened);
+                });
+            },"mininotes-password").start();
+        }));
+        box[0]=new Box().setTitle(title).setView(scrolling(body)).create();box[0].show();
+    }
+
+    /** The notebook's key sealed once more, by the phone's secure hardware, after Android's own prompt. */
+    private void phoneUnlockOn() {
+        final byte[] key=NoteStore.key();
+        if(key==null){alert("Open the notebook first.");return;}
+        javax.crypto.Cipher cipher;
+        try{cipher=PhoneLock.bioCipher(this,true);}
+        catch(Exception e){alert("This phone cannot keep a key for its own unlock. Set a screen lock in Android's settings first.");return;}
+        askPhone("Unlock Mininotes with this phone",cipher,allowed->{
+            try{PhoneLock.keepBio(this,allowed,key);toast("Mininotes now unlocks with your fingerprint or screen lock");}
+            catch(Exception e){PhoneLock.forgetBio(this);alert("It could not be set up. Your backup password still works.");}
+        },why->{PhoneLock.forgetBio(this);if(why!=null&&!why.isEmpty())toast(why);});
+    }
+
+    /** Three lines to send with the link: what it is, what it is for, where to get it. */
+    static final String INVITE="I use Mininotes to keep notes and lists with the people close to me: a private paper pad, sealed from phone to phone, nothing to sign up for.\nAndroid: open the link and install the .apk file.\n";
+
+    /**
+     * Mininotes, handed on: the download page as a code to scan for somebody standing here, and the same
+     * link with three lines around it for anybody further away, through whatever app sends messages.
+     */
+    private void shareApp() {
+        if(DOWNLOAD.isEmpty()){alert("There is no public download yet.");return;}
+        LinearLayout body=inside();
+        body.addView(label("Somebody next to you can scan this with their phone's camera. For anybody else, send the link.",READING,INK));
+        try {
+            ImageView code=new ImageView(this);
+            android.graphics.drawable.BitmapDrawable drawn=new android.graphics.drawable.BitmapDrawable(getResources(),Qr.of(DOWNLOAD,1));
+            drawn.setFilterBitmap(false);code.setImageDrawable(drawn);code.setContentDescription("The download link as a code");
+            code.setAdjustViewBounds(true);code.setPadding(0,dp(16),0,dp(8));
+            body.addView(code,new LinearLayout.LayoutParams(-1,dp(240)));
+        } catch(Exception noCode){/* the link below is enough */}
+        TextView link=label(DOWNLOAD,QUIET,MUTED);link.setTextIsSelectable(true);link.setGravity(Gravity.CENTER);body.addView(link);
+        final AlertDialog[] box={null};
+        body.addView(primary("Send the link",()->{
+            Intent send=new Intent(Intent.ACTION_SEND).setType("text/plain")
+                .putExtra(Intent.EXTRA_SUBJECT,"Mininotes").putExtra(Intent.EXTRA_TEXT,INVITE+DOWNLOAD);
+            started(Intent.createChooser(send,"Share Mininotes"));
+        }));
+        box[0]=new Box().setTitle("Share Mininotes").setView(scrolling(body)).create();box[0].show();
+    }
+
+    private void wordsAgain() {
+        withPassword("Show recovery words","Type your password to see your recovery words.","Show the words",key->{
+            try{showWords(Vault.words(PhoneLock.kept(this),key),false,()->{});}
+            catch(Exception e){alert("The words could not be read: "+e.getMessage());}
+        });
+    }
+
+    private void changePassword() {
+        withPassword("Change backup password","Type your current backup password.","Continue",key->{
+            LinearLayout body=inside();
+            final EditText first=secret(body,"New password"),again=secret(body,"The same again");
+            body.addView(under("Your recovery words stay the same."));
+            final TextView said=label(" ",QUIET,WARN);body.addView(said);
+            final AlertDialog[] box={null};
+            body.addView(primary("Change password",()->{
+                String problem=passwordProblem(first,again);if(problem!=null){said.setText(problem);return;}
+                final char[] chosen=first.getText().toString().toCharArray();box[0].dismiss();
+                final int job=busy("Changing the password…");
+                new Thread(()->{
+                    boolean done=false;
+                    try{byte[] kept=PhoneLock.kept(this);PhoneLock.write(PhoneLock.file(this,PhoneLock.KEPT),Vault.newPassword(kept,key,chosen));done=true;}catch(Exception e){/* said below */}
+                    final boolean changed=done;
+                    runOnUiThread(()->busyDone(job,changed?"Password changed":"The password could not be changed. The old one still works."));
+                },"mininotes-password").start();
+            }));
+            box[0]=new Box().setTitle("New backup password").setView(scrolling(body)).create();box[0].show();
+        });
+    }
+
+    private void lockOff() {
+        withPassword("Turn off the lock?","Your notes on this phone will no longer be encrypted, and Mininotes will open without a password. Type your password to turn it off.","Turn off the lock",key->{
+            final int job=busy("Turning off the lock…");
+            background.submit(()->{PhoneLock.decrypt(this,key);return null;},done->{
+                Listening.rehear(this);busyDone(job,"Lock turned off");recreate();
+            },e->{busyDone(job,null);alert("The lock could not be turned off: "+(e.getMessage()==null?"something went wrong":e.getMessage())+". Your notes are as they were.");});
+        });
+    }
+
+    /** The key of a locked backup: the password of the notebook it came from, or its 12 words, in one field. */
+    private void backupKey(final byte[] lock,final Consumer<byte[]> then) {
+        LinearLayout body=inside();
+        body.addView(label("This backup is locked. Type the password of the notebook it came from, or its 12 recovery words.",READING,INK));
+        final EditText said=field("Password or recovery words",400);said.setSingleLine(false);
+        said.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE|android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS|android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+        body.addView(said);
+        final TextView wrong=label(" ",QUIET,MUTED);body.addView(wrong);
+        final AlertDialog[] box={null};
+        body.addView(primary("Open the backup",()->{
+            wrong.setTextColor(MUTED);wrong.setText("Opening…");
+            final String typed=said.getText().toString();
+            new Thread(()->{
+                byte[] key=null;
+                try{key=typed.trim().split("\\s+").length==Vault.WORDS?Vault.recover(lock,typed):Vault.open(lock,typed.toCharArray());}catch(Exception no){/* said below */}
+                final byte[] opened=key;
+                runOnUiThread(()->{
+                    if(opened==null){wrong.setTextColor(WARN);wrong.setText("That does not open this backup.");return;}
+                    box[0].dismiss();then.accept(opened);
+                });
+            },"mininotes-backup-key").start();
+        }));
+        box[0]=new Box().setTitle("Locked backup").setView(scrolling(body)).create();box[0].show();
+    }
+
     private void usePaper(int rung) {
         paper=Math.max(0,Math.min(PAPERS.length-1,rung));
         int[] set=PAPERS[paper];
@@ -496,8 +903,8 @@ public final class MainActivity extends Activity {
     private void askWhatIsOwed() {
         if(active==null){owedNow=0;return;}
         final String id=active.id;
-        background.submit(()->store.owed(NoteStore.Branch.Kind.PAGE,id).size(),
-            owed->{if(active!=null&&active.id.equals(id)){owedNow=owed;saidState();}},e->{});
+        background.submit(()->new Object[]{store.owed(NoteStore.Branch.Kind.PAGE,id).size(),SyncStatus.read(store,id)},
+            result->{if(active!=null&&active.id.equals(id)){owedNow=(Integer)result[0];syncState=(SyncStatus.State)result[1];saidState();}},e->{});
     }
 
     /**
@@ -541,6 +948,10 @@ public final class MainActivity extends Activity {
 
     /** One line for both things it can say: a save that failed, or an address still waiting. */
     private void saidState() {
+        if(syncTimes!=null&&active!=null&&!shelves) {
+            syncTimes.setTextColor(MUTED);
+            syncTimes.setText(edits!=saved?"Saving…":syncState==null||syncState.saved()!=active.updated?" ":syncState.brief("this phone"));
+        }
         if(status==null)return;
         if(failed){status.setTextColor(WARN);status.setText(R.string.save_failed);status.setVisibility(View.VISIBLE);return;}
         // A copy shared to be read says so, in the place the state of the page is said, for as long as it is one.
@@ -569,7 +980,7 @@ public final class MainActivity extends Activity {
     }
 
     private void shell() {
-        rows=null;topBar=null;stage=new FrameLayout(this);stage.setBackgroundColor(PAPER);root=column();
+        rows=null;topBar=null;versionLine=null;stage=new FrameLayout(this);stage.setBackgroundColor(PAPER);root=column();
         stage.addView(root,new FrameLayout.LayoutParams(-1,-1));
         // A new screen is not a new app: whatever you were looking closely at, you go on looking closely
         // at. The zoom is put back once the new stage has a size to put it back against.
@@ -593,7 +1004,12 @@ public final class MainActivity extends Activity {
     }
 
     @Override public void onCreate(Bundle state) {
-        super.onCreate(state);store=NoteStore.of(this);background=new Background(handler::post);
+        super.onCreate(state);
+        PhoneLock.tidy(this);
+        // Locked, and not opened since the app started: the password first, and nothing of the notebook before it.
+        if(!PhoneLock.open(this)){lockedOut=true;usePaper(paperNow());unlockScreen();return;}
+        store=NoteStore.of(this);background=new Background(handler::post);
+        if(offerPhoneUnlock){offerPhoneUnlock=false;handler.postDelayed(this::phoneUnlockOn,600);}
         network=new Background(handler::post);chores=new Background(handler::post);
         lookout=new Background(handler::post);
         // A build that was handed to Android at the last opening is, if it took, the one running now.
@@ -601,6 +1017,8 @@ public final class MainActivity extends Activity {
         // Listening before anything is sent, so a reply to the first thing this app sends is not the one
         // message that lands with nobody there to hear it.
         listenForNotes();
+        // Whatever arrived while the notebook was locked and nobody had opened it, taken in now it is open.
+        background.submit(()->PhoneLock.takeIn(this,store,keys()).size(),taken->{if(taken>0)refresh();},e->{});
         usePaper(paperNow());
         cards=getSharedPreferences("settings",MODE_PRIVATE).getBoolean("cards",true);
         tone=getSharedPreferences("settings",MODE_PRIVATE).getInt("tone",Tint.FIRST_TONE);
@@ -644,7 +1062,7 @@ public final class MainActivity extends Activity {
 
     /** The whole app, most of the time: one ruled page. */
     private void write(NoteStore.Note note) {
-        active=note;shelves=false;carrying=null;saved=edits;failed=false;pageShared=false;
+        active=note;shelves=false;carrying=null;saved=edits;failed=false;pageShared=false;syncState=null;
         readOnly=false;saidReadOnly=false;readOwner="";shell();
         LinearLayout top=bar();
         top.addView(heavy("←","Back to this book",30,INK,v->{if(active!=null)openBookOf(active.book);}));
@@ -677,6 +1095,11 @@ public final class MainActivity extends Activity {
             "this note","",0,0,false,note.colour)));
         top.addView(tap("⋮","This note",22,INK,this::pageMenu));
         root.addView(top);
+        // One quiet line; the exact times, to the second, when it is tapped.
+        syncTimes=label(" ",QUIET,MUTED);syncTimes.setSingleLine(true);syncTimes.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        syncTimes.setPadding(dp(20),0,dp(20),dp(6));
+        syncTimes.setOnClickListener(v->{if(syncState!=null)alert(syncState.detail("this phone"));});
+        root.addView(syncTimes,new LinearLayout.LayoutParams(-1,-2));
         page=new Pad(this,LINE);page.setGravity(Gravity.TOP);page.setTextSize(textSize);page.setTextColor(INK);
         // A little paper under the last line, and no more: a page that kept a keyboard's worth of it
         // scrolled that emptiness into view as you wrote, and the writing was pushed off the top.
@@ -715,7 +1138,9 @@ public final class MainActivity extends Activity {
             // has to be ready to be pressed the moment there is something to send.
             if(pageShared)wantsSending();
             unlinkAround(page.getSelectionStart());
-            edits++;handler.removeCallbacks(autoSave);handler.postDelayed(autoSave,SAVE_DELAY);}));
+            // Typing is use: the keyboard's letters never reach the screen as touches.
+            lastTouch=System.currentTimeMillis();
+            edits++;saidState();handler.removeCallbacks(autoSave);handler.postDelayed(autoSave,SAVE_DELAY);}));
         fill(note);
         // A note you open is a note you are reading. The keyboard comes up when you tap the page, not
         // before — except on a blank one, where there is nothing to read and writing is the only reason
@@ -730,7 +1155,7 @@ public final class MainActivity extends Activity {
         // Not on a copy this phone may only read, where there is nothing to write with.
         if(note.theirs&&!note.writes)blank=false;
         wantKeyboard=blank;
-        if(blank){keyboard(true);focus();page.postDelayed(this::writeOn,300);}
+        if(blank){keyboard(true);focus();page.postDelayed(raise,300);}
         else keyboard(false);
         askWritable();
     }
@@ -823,6 +1248,8 @@ public final class MainActivity extends Activity {
     private void load(NoteStore.Note note) {
         if(edits!=saved)return;
         active=note;saved=edits;fill(note);
+        // The blank start page asked for the keyboard; a note with writing on it arrived to be read instead.
+        if(note.body!=null&&!note.body.trim().isEmpty())quiet();
         // The bar was drawn before this note existed on it, so the mark is asked again now that it does -
         // and so is whether the page takes writing, which the blank page it was dropped into did.
         askWhatIsOwed();refreshOwed();
@@ -1117,7 +1544,15 @@ public final class MainActivity extends Activity {
             ?getString(R.string.app_name):here().name,READING,MUTED);
         called.setGravity(Gravity.CENTER);called.setSingleLine(true);
         called.setEllipsize(TextUtils.TruncateAt.END);
-        top.addView(called,new LinearLayout.LayoutParams(0,-2,1));
+        if(here().kind==NoteStore.Branch.Kind.LIBRARY) {
+            // At the top of the app, which build this is - and, when a newer one is out, the way to it.
+            LinearLayout named=column();named.setGravity(Gravity.CENTER);
+            named.addView(called,new LinearLayout.LayoutParams(-1,-2));
+            versionLine=label("",QUIET,MUTED);versionLine.setGravity(Gravity.CENTER);versionLine.setSingleLine(true);
+            named.addView(versionLine,new LinearLayout.LayoutParams(-1,-2));
+            versionShown();
+            top.addView(named,new LinearLayout.LayoutParams(0,-2,1));
+        } else {versionLine=null;top.addView(called,new LinearLayout.LayoutParams(0,-2,1));}
         // What others share with you is not kept apart: it stands among your own things, saying on itself
         // that it came from somebody else. So there is nothing up here for it.
         // One menu: this level, then the app. Everything about a thing is managed from inside it.
@@ -1505,10 +1940,13 @@ public final class MainActivity extends Activity {
         if(!newer.isEmpty())sheet.row("Update to v"+newer,()->announce(newer));
         // One place for everything about this pad rather than about what is on it: what you are called,
         // how anybody reaches you, and whether the node behind that is working.
+        // Whether the notebook is encrypted, in the menu that is always a tap away, not only inside Profile.
+        sheet.row(PhoneLock.locked(this)?"🔒 Encrypted":"Not encrypted · Security",this::security);
         sheet.row("Profile",this::profile);
         // Above About, because About is where you go when you have finished with the app and this is where
         // you go when you have not.
         sheet.row("Feedback",this::feedback);
+        sheet.row("Share Mininotes",this::shareApp);
         sheet.row("About",this::about);
     }
 
@@ -2126,6 +2564,14 @@ public final class MainActivity extends Activity {
                 // was asleep when somebody accepted would otherwise never find out, and the person who
                 // accepted would go on looking at a shelf with nothing on it.
                 String mine=getSharedPreferences("settings",MODE_PRIVATE).getString("address","");
+                // Once: pairings made with a plain code before a plain code said hello were one-sided, so
+                // each of this owner's own devices never heard from is said hello to now. Only their own:
+                // somebody else's phone is not sent a question this person did not ask.
+                if(!getSharedPreferences("settings",MODE_PRIVATE).getBoolean("helloedOwn",false)) {
+                    for(NoteStore.Contact own:store.addresses())
+                        if(own.mine&&!Post.heardFrom(this,own))store.accepting(own.address,own.name,"","",false);
+                    getSharedPreferences("settings",MODE_PRIVATE).edit().putBoolean("helloedOwn",true).apply();
+                }
                 for(NoteStore.Accepting again:store.waitingToAccept()) {
                     try{Post.sayAgain(this,store,keys(),again,deviceName(),mine);}
                     catch(Exception notNow){/* the next opening tries again */}
@@ -2170,8 +2616,19 @@ public final class MainActivity extends Activity {
      * a decision, and decisions belong to the person whose notes they are.
      */
     private void somebodyAccepted(final Hello.Said them) {
+        // Somebody scanned the code this phone showed. Showing it was the decision, so it is not asked
+        // again: they are paired back, and handed what was offered if the code went up a short while ago
+        // and they are not claiming more than it offered. An old or unknown offer is still asked about.
+        if(them.target.isEmpty()){pairBack(them);return;}
         final Sharing.Scope scope=scopeNamed(them.scope);
         if(scope==null)return;
+        String offered=getSharedPreferences("offers",MODE_PRIVATE).getString(them.scope+":"+them.target,"");
+        int split=offered.indexOf(':');
+        if(split>0)try {
+            long at=Long.parseLong(offered.substring(0,split));boolean writes=Boolean.parseBoolean(offered.substring(split+1));
+            long age=System.currentTimeMillis()-at;
+            if(age>=0&&age<15*60_000L&&(writes||!them.writes)){giveItTo(them,scope);return;}
+        } catch(NumberFormatException old){/* asked below */}
         background.submit(()->store.nameOf(them.target,scope==Sharing.Scope.COLLECTION),called->{
             String what=called==null||called.toString().trim().isEmpty()
                 ?Sharing.describe(scope,"this"):Sharing.shortly(scope,called.toString());
@@ -2201,6 +2658,24 @@ public final class MainActivity extends Activity {
         // sending is next, and the strip goes on into it.
         },done->{askToSaySo();refresh();refreshOwed();sendAfterSharing(scope,them.target,job,them.name);},
             e->{busyDone(job,null);alert("Could not give it to them. Nothing was changed.");});
+    }
+
+    /** Saved as a device, introduced, and answered, so their phone stops saying hello. */
+    private void pairBack(final Hello.Said them) {
+        final int job=busy("Pairing with "+them.name+"…");
+        network.submit(()->{
+            store.pairedWith(them.address,them.name,false,them.agreement,them.signing);
+            try {
+                String key=Node.introduce(this,them.address);
+                if(!key.isEmpty())store.knownAs(them.address,key);
+            } catch(Exception notNow){/* the address they sent still works until it does not */}
+            Listening.settle(this);
+            String mine=getSharedPreferences("settings",MODE_PRIVATE).getString("address","");
+            NoteStore.Contact saved=store.address(them.address);
+            try{Post.helloBack(this,keys(),them,deviceName(),mine,saved==null?null:saved.contact);}catch(Exception notNow){/* they send again until they hear */}
+            return null;
+        },done->{askToSaySo();busyDone(job,"Paired with "+them.name);refresh();},
+            e->{busyDone(job,null);alert("Could not pair with "+them.name+". Nothing was changed.");});
     }
 
     /** A level by the name it travelled under, or null for one this build does not know. */
@@ -3627,11 +4102,13 @@ public final class MainActivity extends Activity {
             // And, where they offered something, tell them it was taken. A code is read in one direction:
             // without this the phone that made the offer never hears that anybody accepted, and the person
             // who accepted watches a shelf nothing arrives on.
-            if(!said.target.isEmpty()) {
+            // A plain code too: without a hello the device that showed it never learns this phone, and
+            // drops as a stranger's everything this phone then shares with it.
+            {
                 String mine=getSharedPreferences("settings",MODE_PRIVATE).getString("address","");
                 // Kept before it is sent, because the sending may be to a phone nobody is holding.
                 store.accepting(said.address,said.name,said.scope,said.target,said.writes);
-                busySay(job,"Telling "+said.name+" you accepted\u2026");
+                busySay(job,said.target.isEmpty()?"Telling "+said.name+" you paired\u2026":"Telling "+said.name+" you accepted\u2026");
                 // Not reaching them is not a failure to pair, and is not reported as one: it used to land
                 // in "Could not save that device. Nothing was changed.", after the device had been saved.
                 // What was accepted is kept, and said again every time this opens until they answer.
@@ -3642,7 +4119,10 @@ public final class MainActivity extends Activity {
         },done->{
             // There is somebody to hear from now, so the pad goes on listening after it is closed.
             background.submit(()->{Listening.settle(this);return null;},settled->askToSaySo(),e->{});
-            if(said.offer.isEmpty()){busyDone(job,"Paired with "+said.name);addressBook();return;}
+            if(said.offer.isEmpty()){
+                busyDone(job,unreached[0]!=null?"Paired. "+said.name+" is told when it is next reachable":"Paired. "+said.name+" is asked to pair back");
+                addressBook();return;
+            }
             if(unreached[0]!=null) {
                 busyDone(job,null);
                 alert(said.name+" could not be reached just now. This phone tells them again by itself, "
@@ -3772,6 +4252,27 @@ public final class MainActivity extends Activity {
                         .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,getPackageName()))));
                 body.addView(under("This app is not allowed to show notifications. A note still arrives; nothing says so."));
             }
+            // Android's battery saving stops a closed app from listening once the phone has slept a while.
+            // Asked for here, by a tap, never on its own; Android puts the question.
+            // On or off, so a switch - but Android holds the answer, not the pad: the switch opens Android's
+            // own question (or, to turn it off, its battery list) and shows what Android says on coming back.
+            sleepSwitch=null;sleepSays=null;
+            if(paired>0&&Listening.switchedOn(this)&&getSystemService(android.os.PowerManager.class)!=null) {
+                View row=switchRow("Keep listening while the phone sleeps",sleepAllowed(),on->{
+                    if(quietSwitch)return;
+                    started(on?new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                            android.net.Uri.parse("package:"+getPackageName()))
+                        :new Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+                });
+                sleepSwitch=(android.widget.Switch)((LinearLayout)row).getChildAt(1);
+                sleepSays=under("");
+                body.addView(row);body.addView(sleepSays);
+                sleepSaid();
+            }
+
+            // Security: where the lock stands, and the way to it.
+            body.addView(part("Security"));
+            body.addView(tapRow(PhoneLock.locked(this)?"🔒 Encrypted with a password":"Not encrypted — lock with a password",this::security));
 
             body.addView(part("BACKUP"));
             body.addView(under("One file holding every collection, book, note and attachment on this phone."));
@@ -3814,8 +4315,12 @@ public final class MainActivity extends Activity {
     }
 
     /** The quiet line under something, saying what it is. One indent for all of them, so a page lines up. */
+    private TextView selectable(TextView words){words.setTextIsSelectable(true);return words;}
+
     private TextView under(String said) {
         TextView t=label(said,QUIET,MUTED);
+        // Explanations are read, and sometimes passed on: they can be held and copied.
+        t.setTextIsSelectable(true);
         t.setPadding(0,dp(2),0,dp(2));
         return t;
     }
@@ -3883,6 +4388,7 @@ public final class MainActivity extends Activity {
 
     @Override public void onWindowFocusChanged(boolean has) {
         super.onWindowFocusChanged(has);
+        if(lockedOut)return;
         if(!has||!wantKeyboard||page==null)return;
         wantKeyboard=false;
         writeOn();
@@ -3909,21 +4415,22 @@ public final class MainActivity extends Activity {
      */
     private void about() {
         LinearLayout body=inside();
-        body.addView(label("Mininotes v"+version(),READING,INK));
+        body.addView(selectable(label("Mininotes v"+version(),READING,INK)));
         final String newer=newerKnown();
         if(!newer.isEmpty()) {
             TextView out=tap("v"+newer+" is out","Update",READING,ACCENT,v->announce(newer));
             out.setPadding(0,0,0,0);out.setGravity(Gravity.START);body.addView(out);
         }
         body.addView(gap(6));
-        body.addView(label("Free to use, change and pass on. Not to be sold, or put inside anything sold."
-            ,READING,MUTED));
+        body.addView(selectable(label("Free to use, change and pass on. Not to be sold, or put inside anything sold."
+            ,READING,MUTED)));
         body.addView(gap(8));
         // What it does and does not protect, said where somebody would look for it rather than only in a
         // file on a website. Both halves matter: what is sent is sealed, and what is sitting here is not.
-        body.addView(label("What you share is sealed end to end and carried over Maxima by this phone's "
-            +"own node — nobody in between can read it. Notes on this phone are not encrypted, and "
-            +"neither are backups, so the phone itself is what protects them.",READING,MUTED));
+        body.addView(selectable(label("What you share is sealed end to end and carried over Maxima, the communication "
+            +"layer of Minima, by this phone's own node — nobody in between can read it. "
+            +(PhoneLock.locked(this)?"Notes on this phone, their files and the backups you export are encrypted with your password."
+                :"Notes on this phone are not encrypted, and neither are backups; Security, in the menu, can lock them with a password."),READING,MUTED)));
         body.addView(gap(14));
         body.addView(label("Source",READING,MUTED));
         if(SOURCE.isEmpty())body.addView(label("A public repository is coming; this build is not published yet.",QUIET,INK));
@@ -3953,11 +4460,11 @@ public final class MainActivity extends Activity {
                     background.submit(()->{getSharedPreferences("settings",MODE_PRIVATE).edit()
                         .putBoolean("update_look",kept).apply();return null;},done->{},e->{});
                 }));
-            body.addView(label("One line of text is read from the repository when the pad is opened. Nothing "
+            body.addView(selectable(label("One line of text is read from the repository when the pad is opened. Nothing "
                 +"is sent with it, and nothing is fetched until you tap Update: then the build is fetched "
                 +"from the repository's release, checked against its checksum and its signing key, and "
                 +"handed to Android, which asks before installing. Off, it looks only when you tap the "
-                +"button below.",QUIET,MUTED));
+                +"button below.",QUIET,MUTED)));
         }
         AlertDialog.Builder box=new Box().setTitle("About").setView(scrolling(body));
         if(!SOURCE.isEmpty())box.setPositiveButton("Check for a newer version",(d,w)->checkForUpdate());
@@ -4049,7 +4556,29 @@ public final class MainActivity extends Activity {
     private void looked(final String newest) {
         final long when=System.currentTimeMillis();
         background.submit(()->{getSharedPreferences("settings",MODE_PRIVATE).edit()
-            .putString("update_latest",newest).putLong("update_looked",when).apply();return null;},done->{},e->{});
+            .putString("update_latest",newest).putLong("update_looked",when).apply();return null;},done->versionShown(),e->{});
+    }
+
+    /** The line under the app's name on its first screen, while that screen is up. */
+    private TextView versionLine;
+
+    /**
+     * The version under the app's name: quiet on its own; in the accent colour, and a tap from the update,
+     * while a newer build is known. Tapped otherwise, it looks now.
+     */
+    private void versionShown() {
+        if(versionLine==null)return;
+        final String newer=newerKnown();
+        if(newer.isEmpty()) {
+            versionLine.setText("v"+version());versionLine.setTextColor(MUTED);
+            versionLine.setContentDescription("Mininotes v"+version()+". Tap to look for a newer version.");
+            versionLine.setOnClickListener(v->checkForUpdate());
+        } else {
+            versionLine.setText("v"+version()+"  ·  Update to v"+newer);versionLine.setTextColor(ACCENT);
+            versionLine.setTypeface(null,android.graphics.Typeface.BOLD);
+            versionLine.setContentDescription("Mininotes v"+newer+" is out. Tap to update.");
+            versionLine.setOnClickListener(v->announce(newer));
+        }
     }
 
     /** The newer build this phone has heard of, or nothing. Asked of what was written down, not of the network. */
@@ -4449,6 +4978,10 @@ public final class MainActivity extends Activity {
                                final String offer) {
         background.submit(()->{
             String said=getSharedPreferences("settings",MODE_PRIVATE).getString("address","");
+            // Remembered with the time it went up: whoever scans it in the next quarter of an hour is
+            // given it without this phone asking again - showing the code was the asking.
+            getSharedPreferences("offers",MODE_PRIVATE).edit().putString(scope.name()+":"+target,
+                System.currentTimeMillis()+":"+offerWrites).apply();
             return keys().line(deviceName(),said,offer,offerWrites,scope.name(),target);
         },line->{
             LinearLayout body=inside();
@@ -5144,8 +5677,29 @@ public final class MainActivity extends Activity {
     private final class Box extends AlertDialog.Builder {
         Box(){super(MainActivity.this);}
 
+        /** Its words can be held and copied, like any text worth passing on. */
+        @Override public AlertDialog show() {
+            AlertDialog shown=super.show();
+            TextView said=shown.findViewById(android.R.id.message);
+            if(said!=null)said.setTextIsSelectable(true);
+            return shown;
+        }
+
         @Override public AlertDialog create() {
             final AlertDialog made=super.create();
+            // A box is a window of its own, and what is done in it is use as much as anything on the page:
+            // its touches and keys keep the notebook from locking again under somebody who is using it.
+            final android.view.Window own=made.getWindow();
+            if(own!=null) {
+                final android.view.Window.Callback inner=own.getCallback();
+                own.setCallback((android.view.Window.Callback)java.lang.reflect.Proxy.newProxyInstance(getClassLoader(),
+                    new Class<?>[]{android.view.Window.Callback.class},(proxy,method,args)->{
+                        String called=method.getName();
+                        if(called.equals("dispatchTouchEvent")||called.equals("dispatchKeyEvent"))lastTouch=System.currentTimeMillis();
+                        try{return method.invoke(inner,args);}
+                        catch(java.lang.reflect.InvocationTargetException thrown){throw thrown.getCause();}
+                    }));
+            }
             made.setCanceledOnTouchOutside(true);
             final View whole=made.getWindow()==null?null:made.getWindow().getDecorView();
             if(whole==null)return made;
@@ -5445,20 +5999,23 @@ public final class MainActivity extends Activity {
             if(store.weight()>=Attachment.PLENTY)throw new IllegalArgumentException(TOO_MUCH);
             NoteStore.Held held=store.opening(kind,what,name,type,Math.max(0,said));
             File landing=store.fileFor(held.id);
-            long written=0;
+            final long[] written={0};
             try(InputStream in=getContentResolver().openInputStream(from);
                 OutputStream out=new FileOutputStream(landing)) {
                 if(in==null)throw new IllegalStateException("Nothing to read");
-                byte[] part=new byte[16384];int n;
-                while((n=in.read(part))!=-1) {
-                    written+=n;
-                    // Some apps say nothing about the size beforehand, so it is also counted on the way in.
-                    if(Attachment.tooBig(written)){out.close();store.sweep();throw new IllegalArgumentException(TOO_BIG);}
-                    out.write(part,0,n);
-                }
+                // Some apps say nothing about the size beforehand, so it is also counted on the way in.
+                InputStream counted=new java.io.FilterInputStream(in){
+                    @Override public int read(byte[] b,int off,int len) throws java.io.IOException {
+                        int n=super.read(b,off,len);if(n>0){written[0]+=n;if(Attachment.tooBig(written[0]))throw new IllegalArgumentException(TOO_BIG);}return n;
+                    }
+                };
+                // Sealed on the way in when the notebook is locked, so its bytes are never on the phone plain.
+                byte[] key=NoteStore.key();
+                if(key!=null)Sealed.seal(key,counted,out);
+                else{byte[] part=new byte[16384];int n;while((n=counted.read(part))!=-1)out.write(part,0,n);}
             } catch(Exception e){store.sweep();throw e;}
             // The row is written last: until it exists the bytes are nobody's, and get swept up.
-            store.keep(new NoteStore.Held(held.id,held.note,held.name,held.kind,written,held.added,held.held));
+            store.keep(new NoteStore.Held(held.id,held.note,held.name,held.kind,written[0],held.added,held.held));
             return held.name;
         },name->{saidState();showFiles();toast(name+" kept here");},
           e->{saidState();alert(e instanceof IllegalArgumentException&&e.getMessage()!=null
@@ -5527,7 +6084,7 @@ public final class MainActivity extends Activity {
             .setPositiveButton("Remove",(d,w)->background.submit(()->{store.drop(file.id);return null;},
                 done->{showFiles();toast("Removed");},e->alert("Could not remove that file. Nothing was changed."))).show();
     }
-    @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(result!=RESULT_OK||data==null||data.getData()==null)return;final Uri file=data.getData();
+    @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(lockedOut)return;if(result!=RESULT_OK||data==null||data.getData()==null)return;final Uri file=data.getData();
         if(request==EXPORT)background.submit(()->{export(file);return null;},done->toast("Backup exported"),e->alert(BACKUP_FAILED));
         else if(request==IMPORT)askHowToImport(file);
         else if(request==ATTACH)keepFile(file);}
@@ -5539,22 +6096,33 @@ public final class MainActivity extends Activity {
     private void export(Uri file) throws Exception {
         try(OutputStream out=getContentResolver().openOutputStream(file,"wt")) {
             if(out==null)throw new IllegalStateException("No output stream");
-            try(ZipOutputStream zip=new ZipOutputStream(out)) {
-                zip.putNextEntry(new ZipEntry(BACKUP_TEXT));
-                zip.write(store.backup().getBytes(StandardCharsets.UTF_8));
-                zip.closeEntry();
-                byte[] part=new byte[16384];
-                for(NoteStore.Held held:store.everyFile()) {
-                    File kept=store.fileFor(held.id);
-                    if(!kept.isFile())continue;
-                    zip.putNextEntry(new ZipEntry(Attachment.entry(held.id)));
-                    try(InputStream in=new java.io.FileInputStream(kept)) {
-                        int n;while((n=in.read(part))!=-1)zip.write(part,0,n);
-                    }
-                    zip.closeEntry();
-                }
-            }
+            final String text=store.backup();final List<NoteStore.Held> files=store.everyFile();
+            byte[] key=NoteStore.key();
+            if(key==null){zipBackup(text,files,out);return;}
+            // Locked: the backup is sealed whole and carries the lock, so it opens with the same password or
+            // words anywhere - on the PC too. The zip inside is sealed as it is made, never written plain.
+            PhoneLock.writeBackupHead(out,PhoneLock.kept(this));
+            java.io.PipedInputStream plain=new java.io.PipedInputStream(1<<16);java.io.PipedOutputStream into=new java.io.PipedOutputStream(plain);
+            final Exception[] failed={null};
+            Thread making=new Thread(()->{try(into){zipBackup(text,files,into);}catch(Exception e){failed[0]=e;}},"mininotes-backup");
+            making.start();
+            try{Sealed.seal(key,plain,out);}finally{making.join();}
+            if(failed[0]!=null)throw failed[0];
         }
+    }
+
+    /** The backup's zip: the notes as text, and every file, plain inside it. */
+    private void zipBackup(String text,List<NoteStore.Held> files,OutputStream out) throws Exception {
+        ZipOutputStream zip=new ZipOutputStream(out);
+        zip.putNextEntry(new ZipEntry(BACKUP_TEXT));zip.write(text.getBytes(StandardCharsets.UTF_8));zip.closeEntry();
+        for(NoteStore.Held held:files) {
+            File kept=store.fileFor(held.id);
+            if(!kept.isFile())continue;
+            zip.putNextEntry(new ZipEntry(Attachment.entry(held.id)));
+            PhoneLock.copyOut(kept,zip);
+            zip.closeEntry();
+        }
+        zip.finish();zip.flush();
     }
 
     /**
@@ -5567,28 +6135,38 @@ public final class MainActivity extends Activity {
      * here; replacing is a restore — the pad becomes what the backup was, and what is on the phone now goes.
      * Replacing is the one that cannot be undone, so it says so and is asked twice.
      */
+    /** A locked backup is opened first - its password or words - and then asked about like any other. */
     private void askHowToImport(final Uri file) {
+        background.submit(()->{try(InputStream in=new BufferedInputStream(getContentResolver().openInputStream(file))){return PhoneLock.backupLock(in);}},
+            lock->{if(lock==null)askHowToImport(file,null);else backupKey(lock,key->askHowToImport(file,key));},e->alert(READ_FAILED));
+    }
+    private void askHowToImport(final Uri file,final byte[] key) {
         new Box().setTitle("Import this backup")
             .setMessage("Add it to what is here, or replace everything with it?"
                 +"\n\nAdding keeps your notes and brings the backup's in beside them, as copies."
                 +"\n\nReplacing is a restore: this pad becomes what the backup was.")
-            .setPositiveButton("Add to this pad",(d,w)->importing(file,false))
-            .setNeutralButton("Replace everything",(d,w)->confirmReplace(file))
+            .setPositiveButton("Add to this pad",(d,w)->importing(file,false,key))
+            .setNeutralButton("Replace everything",(d,w)->confirmReplace(file,key))
             .show();
     }
 
-    private void confirmReplace(final Uri file) {
+    private void confirmReplace(final Uri file,final byte[] key) {
         background.submit(()->store.inside(NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING).holds.size(),here->
             new Box().setTitle("Replace everything?")
                 .setMessage((here==0?"This pad":here==1?"The one collection on this pad":"All "+here+" collections on this pad")
                     +" and every book, note and file in them are deleted, and the backup is put in their place."
                     +"\n\nThis cannot be undone. Export what is here first if you are not sure.")
-                .setPositiveButton("Replace everything",(d,w)->importing(file,true)).show(),
+                .setPositiveButton("Replace everything",(d,w)->importing(file,true,key)).show(),
             e->alert(READ_FAILED));
     }
 
-    private void importing(final Uri file,final boolean replacing) {
-        background.submit(()->restore(file,replacing),count->{
+    private void importing(final Uri file,final boolean replacing,final byte[] key) {
+        background.submit(()->{
+            int count=restore(file,replacing,key);
+            // Into a locked notebook, what came in plain is sealed like everything else in it.
+            byte[] mine=NoteStore.key();if(mine!=null)PhoneLock.every(this,mine,true);
+            return count;
+        },count->{
             trail.clear();trail.add(new Step(NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING,"All collections"));
             refresh();showFiles();
             toast(replacing?(count+(count==1?" note restored":" notes restored"))
@@ -5596,10 +6174,19 @@ public final class MainActivity extends Activity {
         },e->alert(BACKUP_FAILED));
     }
 
-    private int restore(Uri file,boolean replacing) throws Exception {
+    private int restore(Uri file,boolean replacing,byte[] key) throws Exception {
+        Thread[] opening={null};final Exception[] failed={null};
         try(InputStream raw=getContentResolver().openInputStream(file)) {
             if(raw==null)throw new IllegalStateException("No input stream");
             BufferedInputStream in=new BufferedInputStream(raw);
+            if(key!=null) {
+                // A locked backup: past its lock, then opened as it is read, and read to its end so its last check runs.
+                PhoneLock.backupLock(in);
+                java.io.PipedInputStream plain=new java.io.PipedInputStream(1<<16);java.io.PipedOutputStream into=new java.io.PipedOutputStream(plain);
+                final InputStream sealed=in;
+                opening[0]=new Thread(()->{try(into){Sealed.open(key,sealed,into);}catch(Exception e){failed[0]=e;}},"mininotes-backup-open");
+                opening[0].start();in=new BufferedInputStream(plain);
+            }
             in.mark(2);
             boolean zipped=in.read()=='P'&&in.read()=='K';
             in.reset();
@@ -5624,7 +6211,10 @@ public final class MainActivity extends Activity {
                         }
                     }
                 }
+                // Read to the very end: a locked backup's last piece carries the check that it is whole.
+                byte[] rest=new byte[8192];while(in.read(rest)!=-1){/* drained */}
             }
+            if(opening[0]!=null){opening[0].join();if(failed[0]!=null)throw new IllegalArgumentException("That backup could not be opened: "+failed[0].getMessage());}
             if(text==null)throw new IllegalArgumentException("That zip is not a Mininotes backup.");
             return store.importBackup(text,replacing);
         } finally {
@@ -5639,7 +6229,7 @@ public final class MainActivity extends Activity {
     }
 
     // The process can be killed after these callbacks, so wait a bounded time for queued writes to land.
-    @Override protected void onPause(){save();keepVersion();rememberWhere();background.flush(FLUSH_TIMEOUT);super.onPause();}
+    @Override protected void onPause(){if(lockedOut){super.onPause();return;}save();keepVersion();rememberWhere();background.flush(FLUSH_TIMEOUT);super.onPause();}
 
     /**
      * Where the app was when it was left: a note being written, or a level of the shelves and the way in to
@@ -5672,15 +6262,16 @@ public final class MainActivity extends Activity {
         }
         return back;
     }
-    @Override protected void onSaveInstanceState(Bundle state){save();background.flush(FLUSH_TIMEOUT);if(active!=null)state.putString("note",active.id);super.onSaveInstanceState(state);}
+    @Override protected void onSaveInstanceState(Bundle state){if(lockedOut){super.onSaveInstanceState(state);return;}save();background.flush(FLUSH_TIMEOUT);if(active!=null)state.putString("note",active.id);super.onSaveInstanceState(state);}
     @Override public void onBackPressed() {
+        if(lockedOut){super.onBackPressed();return;}
         if(carrying!=null){carrying=null;browse();return;}
         if(shelves){if(trail.size()>1)climb(trail.size()-2);else back();return;}
         save();super.onBackPressed();
     }
     // The notebook is not closed here any more. It belongs to the process, and the process can outlive this
     // screen: a note arriving a minute after the pad was put away is written into the same notebook.
-    @Override protected void onDestroy(){handler.removeCallbacksAndMessages(null);
+    @Override protected void onDestroy(){handler.removeCallbacksAndMessages(null);if(lockedOut){super.onDestroy();return;}
         background.submit(()->{if(core!=null)core.close();return null;},done->{},e->{});
         network.abandon();chores.abandon();lookout.abandon();background.close();super.onDestroy();}
 
@@ -5691,8 +6282,33 @@ public final class MainActivity extends Activity {
      * put to the person it was waiting for, and if the note left open was written in from the other end,
      * the page is brought up to it before a word typed on the old one can go back over it.
      */
+    /** Back from Android's battery question: the switch says what Android decided, not what was tapped. */
+    @Override protected void onResume() {
+        super.onResume();
+        if(lockedOut)return;
+        if(sleepSwitch!=null)sleepSaid();
+    }
+
+    private boolean sleepAllowed() {
+        android.os.PowerManager power=getSystemService(android.os.PowerManager.class);
+        return power!=null&&power.isIgnoringBatteryOptimizations(getPackageName());
+    }
+
+    private void sleepSaid() {
+        boolean on=sleepAllowed();
+        if(sleepSwitch.isChecked()!=on){quietSwitch=true;sleepSwitch.setChecked(on);quietSwitch=false;}
+        if(sleepSays!=null)sleepSays.setText(on
+            ?"Notes arrive while the phone sleeps. It wakes the phone for a moment every five to nine minutes. To turn this off, choose Mininotes in Android's list and pick Optimise."
+            :"Android stops the pad listening after the phone has slept a while. Notes sent then can be missed.");
+    }
+
     @Override protected void onStart() {
         super.onStart();
+        if(lockedOut)return;
+        // Locked again while away, or away longer than was chosen: the unlock page, and nothing of the notebook.
+        if(!PhoneLock.open(this)){recreate();return;}
+        if(idleTooLong()){relockNow();return;}
+        handler.removeCallbacks(awayRelock);handler.removeCallbacks(idleCheck);handler.postDelayed(idleCheck,30_000);
         Listening.watch(watching);
         for(Hello.Said them:Listening.unanswered())somebodyAccepted(them);
         // Only on coming back. The first time, the screen was drawn from the notebook a moment ago.
@@ -5704,7 +6320,35 @@ public final class MainActivity extends Activity {
         else refresh();
     }
 
-    @Override protected void onStop(){Listening.unwatch(watching);beenAway=true;super.onStop();}
+    @Override protected void onStop(){if(lockedOut){super.onStop();return;}
+        handler.removeCallbacks(idleCheck);
+        int minutes=PhoneLock.locked(this)?PhoneLock.minutes(this):0;
+        if(minutes>0)handler.postDelayed(awayRelock,minutes*60_000L);
+        Listening.unwatch(watching);beenAway=true;super.onStop();}
+
+    // ---- locking again when not used ---------------------------------------------------------------------
+
+    /** When the screen was last touched; the notebook locks again after the time chosen in Security. */
+    private long lastTouch=System.currentTimeMillis();
+    @Override public void onUserInteraction(){super.onUserInteraction();lastTouch=System.currentTimeMillis();}
+
+    private boolean idleTooLong() {
+        int minutes=PhoneLock.minutes(this);
+        return PhoneLock.locked(this)&&minutes>0&&System.currentTimeMillis()-lastTouch>=minutes*60_000L;
+    }
+
+    /** On screen: looked at every half minute. */
+    private final Runnable idleCheck=()->{if(idleTooLong())relockNow();else handler.postDelayed(this.idleCheck,30_000);};
+
+    /** Away: once the time is up the notebook is closed there and then, and the page it left waits for the password. */
+    private final Runnable awayRelock=()->{if(idleTooLong()&&PhoneLock.open(this))PhoneLock.relock(this);};
+
+    /** Writing saved, the notebook closed and its key let go, and the unlock page in its place. */
+    private void relockNow() {
+        handler.removeCallbacks(idleCheck);handler.removeCallbacks(awayRelock);
+        save();keepVersion();background.flush(FLUSH_TIMEOUT);
+        PhoneLock.relock(this);recreate();
+    }
 
     /** This screen, as the thing that is told when something lands. One object, so it can be taken down. */
     private final Consumer<Post.Landed> watching=landed->runOnUiThread(()->heard(landed));
@@ -5744,6 +6388,7 @@ public final class MainActivity extends Activity {
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        if(lockedOut)return;
         if(opened(intent))return;
         String note=intent==null?null:intent.getStringExtra(Listening.NOTE);
         if(note==null||note.isEmpty())return;

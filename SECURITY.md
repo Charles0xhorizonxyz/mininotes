@@ -5,7 +5,7 @@
 Report privately, not in a public issue:
 
 - GitHub → **Security** → **Report a vulnerability**
-  ([private advisories](https://github.com/Charles0xhorizonxyz/mininotes/security/advisories/new)).
+  ([private advisories](https://github.com/mininotesorg/mininotes/security/advisories/new)).
 
 Say what you did, what happened, and what you expected. A proof of concept
 helps. You will get a first reply within a week, and will be credited in the

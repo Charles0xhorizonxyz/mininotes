@@ -32,10 +32,17 @@
          switched off in Profile or from the notification itself. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
+    <!-- To ask, from Profile and only when somebody taps for it, that Android let the pad go on listening
+         while the phone sleeps. Android asks the person; refusing it means notes wait until the phone
+         wakes. See Waking for what it costs: one short wake-up every five to nine minutes. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- To offer fingerprint, face or the phone's own screen lock as a way to unlock a locked notebook, through
+         Android's own prompt. Only when the owner switches it on in Security; the password always works too. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <!-- To say that a note arrived. Asked for once; refusing it changes nothing but that. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
-    <application android:label="@string/app_name" android:icon="@drawable/ic_note" android:theme="@style/AppTheme" android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/data_extraction_rules" android:supportsRtl="true">
+    <application android:label="@string/app_name" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:theme="@style/AppTheme" android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/data_extraction_rules" android:supportsRtl="true">
         <!-- One pad, never two. A second copy of the screen would be a second copy of the page being written
              on, each saving over the other; anything that asks for the pad is handed the one there is. -->
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask" android:windowSoftInputMode="stateUnchanged|adjustResize">
@@ -64,5 +71,7 @@
              with the screen to show. Not exported: the installer reaches it through an intent this app
              signed itself. -->
         <receiver android:name=".Installing" android:exported="false" />
+        <!-- The phone's own alarm, looking after the node while the phone sleeps. Only this app sets it. -->
+        <receiver android:name=".Waking" android:exported="false" />
     </application>
 </manifest>

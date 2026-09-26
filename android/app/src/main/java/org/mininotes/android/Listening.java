@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: LicenseRef-Mininotes-NoPaidProducts
-// Apache-2.0 with the Commons Clause and a paid-product condition. See LICENSE.
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Mininotes is free software: GNU General Public License, version 3 or later. See LICENSE.
 package org.mininotes.android;
 
 import android.app.Notification;
@@ -66,19 +66,20 @@ public final class Listening extends Service {
         Context app=any.getApplicationContext();
         Intent service=new Intent(app,Listening.class);
         try {
-            if(switchedOn(app)&&NoteStore.of(app).anybodyPaired())app.startForegroundService(service);
-            else app.stopService(service);
+            // A locked notebook cannot say whether anybody is paired; it listens, and what comes waits sealed.
+            if(switchedOn(app)&&(!PhoneLock.open(app)||NoteStore.of(app).anybodyPaired()))app.startForegroundService(service);
+            else{app.stopService(service);Waking.stop(app);}
         } catch(RuntimeException notAllowed){/* not on screen after all; the next opening settles it */}
     }
 
     /** Who is on screen, or null when nobody is any more. */
-    static void watch(Consumer<Post.Landed> there){watcher=there;}
+    static void watch(Consumer<Post.Landed> there){watcher=there;Node.near(there!=null);}
 
     /**
      * Taken down - but only by whoever put it up. A screen that is going away after another has already
      * come up must not leave the one people are looking at with nobody telling it anything.
      */
-    static synchronized void unwatch(Consumer<Post.Landed> there){if(watcher==there)watcher=null;}
+    static synchronized void unwatch(Consumer<Post.Landed> there){if(watcher==there){watcher=null;Node.near(false);}}
 
     /** Every offer taken up while nobody was looking, handed over once. */
     static List<Hello.Said> unanswered() {
@@ -98,6 +99,11 @@ public final class Listening extends Service {
      */
     static synchronized void hear(Context any) {
         final Context app=any.getApplicationContext();
+        // Locked, and nobody has opened it: what arrives is kept as it came, sealed for this phone, until it is.
+        if(!PhoneLock.open(app)) {
+            if(!hearing)hearing=Node.listen(app,message->PhoneLock.keepArriving(app,message));
+            return;
+        }
         final NoteStore store=NoteStore.of(app);
         final Keys keys=Keys.of(app);
         // The notebook names this phone in every membership it sends, and leaves this phone out of every
@@ -110,11 +116,14 @@ public final class Listening extends Service {
             store.myName=Node.nameHere(app);
             store.myAddress=app.getSharedPreferences("settings",Context.MODE_PRIVATE).getString("address","");
         } catch(Exception notNow){return;}
-        if(hearing)return;
+        if(hearing&&heardForReal)return;
         // What was handed over and never answered is sent again from the node's own upkeep, so it goes on
         // happening for as long as the process lives, screen or no screen.
         Node.everyBeat(()->Post.again(app,store,keys));
+        heardForReal=true;
         hearing=Node.listen(app,message->{
+            // While the notebook is being swapped for its locked or unlocked copy, nothing is written into it.
+            if(PhoneLock.busy){PhoneLock.keepArriving(app,message);return;}
             Post.Landed landed=Post.arrived(app,store,keys,message);
             if(landed==null)return;
             Consumer<Post.Landed> there=watcher;
@@ -123,11 +132,19 @@ public final class Listening extends Service {
             if(landed.answered)return;
             if(landed.accepted!=null) {
                 synchronized(unanswered){unanswered.add(landed.accepted);}
-                say(app,ACCEPTED,landed.accepted.name+" accepted what you offered",
-                    "Open the pad to give it to them, or not.","");
+                if(landed.accepted.target.isEmpty())say(app,ACCEPTED,landed.accepted.name+" paired with you",
+                    "Open the pad to finish pairing.","");
+                else say(app,ACCEPTED,landed.accepted.name+" accepted what you offered",
+                    "Open the pad to send it to them.","");
             } else if(landed.said!=null)say(app,LANDED,landed.said,"",landed.note);
         });
     }
+
+    /** Listening again, with the notebook as it now is: after the lock went on or came off. */
+    static synchronized void rehear(Context any){heardForReal=false;hear(any);}
+    /** Locked again: the upkeep stops writing, and whatever arrives waits sealed in the inbox. */
+    static synchronized void relock(Context any){Node.everyBeat(null);heardForReal=false;hearing=false;hear(any);}
+    private static boolean heardForReal;
 
     // ---- the service itself ----------------------------------------------------------------------------
 
@@ -136,7 +153,7 @@ public final class Listening extends Service {
     @Override public int onStartCommand(Intent intent,int flags,int startId) {
         if(intent!=null&&STOP.equals(intent.getAction())) {
             // From the notification: the way out is where the thing is. Remembered, so it stays off.
-            switchOn(this,false);
+            switchOn(this,false);Waking.stop(this);
             stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();
             return START_NOT_STICKY;
         }
@@ -153,8 +170,9 @@ public final class Listening extends Service {
         // Off this thread: starting a node means reaching relays, which takes as long as it takes.
         new Thread(()->{
             try {
-                if(!switchedOn(this)||!NoteStore.of(this).anybodyPaired()){stopSelf();return;}
+                if(!switchedOn(this)||PhoneLock.open(this)&&!NoteStore.of(this).anybodyPaired()){stopSelf();return;}
                 hear(this);
+                Waking.again(this);
             } catch(Exception notNow){/* the process is up, and the next opening tries again */}
         },"mininotes-listening").start();
         return START_STICKY;

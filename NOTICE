@@ -1,10 +1,22 @@
 Mininotes
 Copyright 2026 Mininotes contributors
 
-Licensed under the terms in LICENSE: the Apache License 2.0, with the Commons
-Clause condition and an additional paid-product condition. The software is free
-to use, change and pass on, and may not be sold or included in anything sold.
-Any copy you pass on must carry this notice and those conditions.
+Mininotes is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. It is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See LICENSE for the full text.
+
+Until 26 September 2026 Mininotes was published under the Apache License 2.0
+with the Commons Clause and a paid-product condition. From that date it is
+under the GPL, version 3 or later; copies taken before then keep the terms they
+were given under.
+
+One part is not under the GPL, and is not this project's to license: the
+Maxima transport in android/maxima-core/, described below. Its author has not
+yet put a licence on it. Until they do, a build of Mininotes contains code that
+is redistributed by permission rather than under a free licence.
 
 app/mds.js is the unmodified Minima MDS JavaScript library, Apache-2.0. Its own
 Apache-2.0 terms apply to it and are not narrowed by this project's conditions.
@@ -35,7 +47,7 @@ them. They answered on 2026-09-22, in a private message: "go for it" (typed
 "fo for it"), "with my blessing", "open source is free although I do appreciate
 you asking". So the tree is redistributed here with its author's permission and
 credit, and nothing more is claimed for it: it is not under this project's
-LICENSE, the conditions in that LICENSE are not put on it, and anybody who wants
+LICENSE, the GPL is not put on it, and anybody who wants
 the Maxima transport for their own work should take it from its own repository
 and its author rather than from here. The same credit is beside the code, in
 android/maxima-core/NOTICE. See docs/MAXIMA-TRANSPORT.md.

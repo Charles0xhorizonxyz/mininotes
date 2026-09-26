@@ -10,4 +10,7 @@ android/local.properties
 # line the app reads to know whether it is behind.
 dist/*
 !dist/latest.txt
+!dist/latest-windows.txt
 keystore.properties
+windows/.gradle/
+windows/build/

@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: LicenseRef-Mininotes-NoPaidProducts
-// Apache-2.0 with the Commons Clause and a paid-product condition. See LICENSE.
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Mininotes is free software: GNU General Public License, version 3 or later. See LICENSE.
 package org.mininotes.android;
 
 import java.util.ArrayList;
@@ -12,7 +12,7 @@ import java.util.List;
  * types, so the version rules are unit tested without a device.
  */
 final class SchemaMigrations {
-    static final int VERSION=22;
+    static final int VERSION=23;
 
     /** Every pad starts with one collection holding one book, so writing never begins with a decision. */
     static final String FIRST_COLLECTION="collection-first", FIRST_BOOK="book-first";
@@ -282,6 +282,18 @@ final class SchemaMigrations {
         "UPDATE shares SET changed=added WHERE changed=0",
     };
 
+    /**
+     * What this device is carrying for others, sealed for somebody else: see {@link Courier}. One row per
+     * sender, recipient, note and kind, so a newer revision replaces an older one; the bytes as text, since
+     * nothing else here is kept as bytes. `tried` and `tries` say when it was last brought, and how often.
+     */
+    private static final String[] CARRIED={
+        "CREATE TABLE IF NOT EXISTS carried(sender TEXT NOT NULL,recipient TEXT NOT NULL,page TEXT NOT NULL,"
+        +"sort INTEGER NOT NULL,revision INTEGER NOT NULL,bytes TEXT NOT NULL,size INTEGER NOT NULL,"
+        +"kept INTEGER NOT NULL,tried INTEGER NOT NULL DEFAULT 0,tries INTEGER NOT NULL DEFAULT 0,"
+        +"PRIMARY KEY(sender,recipient,page,sort))",
+    };
+
     /** STEPS[i] upgrades a database at version i+1 to version i+2. */
     private static final String[][] STEPS={
         {VIEW_INDEX},
@@ -326,6 +338,8 @@ final class SchemaMigrations {
         LEAVING,
         // 21 -> 22: what was given at pairing time is what the offer said.
         GIVEN,
+        // 22 -> 23: what this device carries for two others that are not on at the same time.
+        CARRIED,
     };
 
     /** The one collection and the one book a pad cannot be without, for a restore that carries neither. */
@@ -355,6 +369,7 @@ final class SchemaMigrations {
         Collections.addAll(statements,STANDING);
         Collections.addAll(statements,LEAVING);
         Collections.addAll(statements,GIVEN);
+        Collections.addAll(statements,CARRIED);
         return statements;
     }
 

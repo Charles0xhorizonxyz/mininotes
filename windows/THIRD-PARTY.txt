@@ -1,0 +1,36 @@
+Mininotes for Windows includes these dependencies:
+
+Maxima transport core — eurobuddha/maxima, commit
+6e001754428623b891bc582b05fe505c1f96f37c. Redistributed with the author's
+permission. See MAXIMA-NOTICE.txt and the root NOTICE.
+
+SQLite JDBC 3.53.4.0 with SQLite3 Multiple Ciphers — Willena (fork of Xerial's), Apache License 2.0;
+SQLite is public domain; SQLite3 Multiple Ciphers is MIT. It keeps the notebook encrypted when a password is set.
+https://github.com/Willena/sqlite-jdbc-crypt
+
+JSON-java 20260719 — JSON-java contributors, public domain.
+https://github.com/stleary/JSON-java
+
+ZXing core 3.5.3 — ZXing authors, Apache License 2.0.
+https://github.com/zxing/zxing
+
+JNA and JNA Platform 5.18.0 — JNA contributors, dual Apache License 2.0 / LGPL 2.1
+or later. This distribution uses the Apache License 2.0 option.
+https://github.com/java-native-access/jna
+
+FlatLaf 3.6 — FormDev Software GmbH, Apache License 2.0. The look of every window.
+https://github.com/JFormDesigner/FlatLaf
+
+Webcam Capture 0.3.12 — Bartosz Firyn and contributors, MIT.
+BridJ 0.7.0 — Olivier Chafik and contributors, BSD 3-Clause.
+SLF4J API / no-operation binding 1.7.36 — QOS.ch, MIT.
+Their license texts are in app/licenses. Webcam Capture's embedded OpenIMAJ and
+filter notices are retained in its JAR's META-INF/3rd-party-licenses directory.
+https://github.com/sarxos/webcam-capture
+https://github.com/nativelibs4java/BridJ
+https://www.slf4j.org
+
+The bundled Java runtime is Eclipse Temurin OpenJDK 17, GPLv2 with the Classpath
+Exception. Its notices and licenses are in runtime/legal in the app directory.
+Dependency JARs retain their embedded license and notice files.
+JUnit and Hamcrest are test-only dependencies and are not distributed.

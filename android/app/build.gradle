@@ -1,13 +1,13 @@
 plugins { id 'com.android.application' }
 android {
     namespace 'org.mininotes.android'
-    compileSdk 36
+    compileSdk 37
     defaultConfig {
         applicationId 'org.mininotes.android'
         minSdk 28
         targetSdk 35
-        versionCode 109
-        versionName '0.0.109'
+        versionCode 130
+        versionName '0.0.130'
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 
@@ -52,4 +52,7 @@ dependencies {
     // The Maxima transport itself, vendored under maxima-core/. This app does not ask another app for an
     // address any more: it is the node, the way Parlons is, so the address is simply something it knows.
     implementation project(':maxima-core')
+    // SQLCipher: the notebook encrypted with its key when the owner sets a password (Profile → Security).
+    implementation 'net.zetetic:sqlcipher-android:4.19.0@aar'
+    implementation 'androidx.sqlite:sqlite:2.7.1'
 }

@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: LicenseRef-Mininotes-NoPaidProducts
-// Apache-2.0 with the Commons Clause and a paid-product condition. See LICENSE.
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Mininotes is free software: GNU General Public License, version 3 or later. See LICENSE.
 package org.mininotes.android;
 
 import android.content.Context;
@@ -79,7 +79,19 @@ final class Post {
      */
     static void accept(Context where,Keys keys,Pairing.Said them,String myName,String myAddress)
             throws Exception {
-        say(where,keys,them.address,them.agreement,them.scope,them.target,them.writes,myName,myAddress);
+        say(where,keys,them.address,them.agreement,them.scope,them.target,them.writes,myName,myAddress,null);
+    }
+
+    /**
+     * Paired back: the answer to somebody who scanned this device's code, with nothing offered.
+     *
+     * <p>A plain code used to be read in one direction only. The phone that scanned it kept the other
+     * device; the device that showed it never heard, and dropped everything the phone then sent as coming
+     * from a stranger - the phone listed the PC on a shared note, and the note never reached it. So scanning
+     * a plain code says hello too, and this is the hello coming back once the owner has said yes.
+     */
+    static void helloBack(Context where,Keys keys,Hello.Said them,String myName,String myAddress,String contact) throws Exception {
+        say(where,keys,them.address,them.agreement,"","",false,myName,myAddress,contact);
     }
 
     /**
@@ -94,11 +106,11 @@ final class Post {
                          String myName,String myAddress) throws Exception {
         NoteStore.Contact them=store.address(again.address);
         if(them==null||them.agreement.length==0)return;
-        say(where,keys,again.address,them.agreement,again.scope,again.target,again.writes,myName,myAddress);
+        say(where,keys,again.address,them.agreement,again.scope,again.target,again.writes,myName,myAddress,them.contact);
     }
 
     private static void say(Context where,Keys keys,String address,byte[] agreement,String scope,
-                            String target,boolean writes,String myName,String myAddress) throws Exception {
+                            String target,boolean writes,String myName,String myAddress,String contact) throws Exception {
         MaximaNode node=Node.node(where);
         if(node==null)throw new IllegalStateException("The node is not running.");
         if(myAddress==null||myAddress.trim().isEmpty())
@@ -108,7 +120,10 @@ final class Post {
             scope,target,writes));
         byte[] sealed=Envelope.seal(new byte[16],0,System.currentTimeMillis(),plain,
             keys.signing(),Keys.publicKey(agreement));
-        MaximaSender.Result said=node.sendRaw(routable(node,address),APPLICATION,sealed);
+        // To the device, where the network knows it: an address is a snapshot, and a PC restarted since
+        // its code was scanned is somewhere else. The address on the code only when nothing better is known.
+        com.eurobuddha.maxima.core.contacts.Contact reach=Node.known(where,contact);
+        MaximaSender.Result said=reach!=null?node.sendToContact(reach,APPLICATION,sealed):node.sendRaw(routable(node,address),APPLICATION,sealed);
         if(said==null||!said.isOk())throw new IllegalStateException("They could not be reached just now.");
     }
 
@@ -144,7 +159,8 @@ final class Post {
         if(whole&&kind==NoteStore.Branch.Kind.PAGE) {
             NoteStore.Note all=store.get(id);
             owed=new ArrayList<>();
-            if(all!=null)for(String address:store.everybodyIn(kind,id))
+            // Not from a reader: what it would send, everybody would refuse.
+            if(all!=null&&!store.onlyReads(id))for(String address:store.everybodyIn(kind,id))
                 owed.add(new Outbox.Wait(id,address,all.revision,false));
         }
         if(only!=null) {
@@ -198,7 +214,7 @@ final class Post {
                     book,store.nameOf(book,false),note.title,note.body,
                     store.mayWrite(them.address,collection,book,note.id),
                     store.travelling(held,what),held==null?"":held.name(),what,true,
-                    store.agreedAt(note.id,them.address)));
+                    store.agreedAt(note.id,them.address),true));
                 byte[] sealed=Envelope.seal(sixteen(wait.page),
                     note.revision,System.currentTimeMillis(),text,mine,theirs);
                 // Handed to the peer, not to an address they used to be at. The transport tries the local
@@ -214,6 +230,9 @@ final class Post {
                 // afterwards by whoever is holding the phone and a cable.
                 android.util.Log.i("Mininotes/Post","sent "+(reach!=null?"to a contact":"to an address")
                     +", revision "+note.revision+": "+(said==null?"no answer":said.statusName));
+                // Not heard from lately, so perhaps not there: a copy goes with whoever can carry it, in
+                // case they are back only after this device has gone.
+                if(!there(them))leaveWithCarriers(where,store,keys,node,them,Courier.NOTE,sixteen(wait.page),note.revision,sealed);
                 if(said!=null&&said.isOk()) {
                     // Handed over, and no more than that. The mark means somebody has it, and the only one
                     // who can say so is them: it stays until their answer comes back.
@@ -270,7 +289,7 @@ final class Post {
      * <p>Nothing is done about one that does not get through. They will send the note again when no
      * answer comes, and be answered again; an answer is never itself answered, so nothing goes round.
      */
-    private static void answer(final Context where,final Keys keys,final NoteStore.Contact them,
+    private static void answer(final Context where,final NoteStore store,final Keys keys,final NoteStore.Contact them,
                                final byte[] page,final long revision,final boolean took) {
         if(where==null||them.agreement.length==0)return;
         ANSWERS.execute(()->{
@@ -285,6 +304,9 @@ final class Post {
                     :node.sendRaw(routable(node,them.address),APPLICATION,sealed);
                 android.util.Log.i("Mininotes/Post","answered them: revision "+revision+": "
                     +(said==null?"no answer":said.statusName));
+                // A note that was carried here comes from a device that may be gone by now; its answer
+                // goes back the same way, or it would send the note again for ever.
+                if(!there(them))leaveWithCarriers(where,store,keys,node,them,Courier.ANSWER,page,revision,sealed);
             } catch(Exception notNow) {
                 android.util.Log.w("Mininotes/Post","could not answer: "+notNow.getClass().getSimpleName());
             }
@@ -438,11 +460,160 @@ final class Post {
             kept.edit().putStringSet("answers",all).apply();
     }
 
+    /** Whether anything signed by them has ever been answered here. */
+    static boolean heardFrom(Context where,NoteStore.Contact them){return doesSpeak(where,them);}
+
     private static boolean doesSpeak(Context where,NoteStore.Contact them) {
         if(where==null||them==null||them.signing.length==0)return false;
         return where.getSharedPreferences("post",Context.MODE_PRIVATE)
             .getStringSet("answers",new java.util.HashSet<String>())
             .contains(android.util.Base64.encodeToString(them.signing,android.util.Base64.NO_WRAP));
+    }
+
+    // ---- carrying for devices that are not on at the same time: see Courier ------------------------------------
+
+    /** When each device was last heard from directly, by the fingerprint of its key. For this run only. */
+    private static final java.util.Map<String,Long> HEARD=new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static String fingerprint(NoteStore.Contact them) {
+        try{return them==null||them.signing.length==0?"":Courier.hex(Envelope.fingerprint(Keys.publicKey(them.signing)));}
+        catch(Exception unreadable){return "";}
+    }
+
+    /** Whether a device was heard from so lately that it is taken to be there. */
+    private static boolean there(NoteStore.Contact them) {
+        Long at=HEARD.get(fingerprint(them));
+        return at!=null&&System.currentTimeMillis()-at<Courier.THERE;
+    }
+
+    /** A device whose notes have said its build carries - and so may be left things, and brought them. */
+    private static void carries(Context where,NoteStore.Contact them) {
+        if(where==null||them==null||them.signing.length==0)return;
+        android.content.SharedPreferences kept=where.getSharedPreferences("post",Context.MODE_PRIVATE);
+        java.util.Set<String> all=new java.util.HashSet<>(kept.getStringSet("carries",new java.util.HashSet<String>()));
+        if(all.add(android.util.Base64.encodeToString(them.signing,android.util.Base64.NO_WRAP)))
+            kept.edit().putStringSet("carries",all).apply();
+    }
+
+    private static boolean doesCarry(Context where,NoteStore.Contact them) {
+        if(where==null||them==null||them.signing.length==0)return false;
+        return where.getSharedPreferences("post",Context.MODE_PRIVATE)
+            .getStringSet("carries",new java.util.HashSet<String>())
+            .contains(android.util.Base64.encodeToString(them.signing,android.util.Base64.NO_WRAP));
+    }
+
+    /** Sealed bytes handed to a device, where the network knows it. Whether the network took them. */
+    private static boolean hand(Context where,MaximaNode node,NoteStore.Contact them,byte[] sealed) throws Exception {
+        com.eurobuddha.maxima.core.contacts.Contact reach=Node.known(where,them.contact);
+        MaximaSender.Result said=reach!=null
+            ?node.sendToContact(reach,APPLICATION,sealed)
+            :node.sendRaw(routable(node,them.address),APPLICATION,sealed);
+        return said!=null&&said.isOk();
+    }
+
+    /**
+     * A copy of something sealed for {@code them}, left with the devices that can carry it: every other
+     * paired device whose build has said it carries, those heard from lately first. Nothing is waited for
+     * and nothing counted - this is on top of the sending, which goes on as it did.
+     */
+    private static void leaveWithCarriers(Context where,NoteStore store,Keys keys,MaximaNode node,NoteStore.Contact them,
+                                          int sort,byte[] page,long revision,byte[] inner) {
+        if(store==null||!Courier.fits(inner))return;
+        try {
+            byte[] forWhom=Envelope.fingerprint(Keys.publicKey(them.signing));
+            List<NoteStore.Contact> carriers=new ArrayList<>();
+            for(NoteStore.Contact one:store.addresses())
+                if(one.paired()&&!one.address.equals(them.address)&&!java.util.Arrays.equals(one.signing,them.signing)&&doesCarry(where,one))carriers.add(one);
+            carriers.sort((a,b)->Boolean.compare(there(b),there(a)));
+            int left=0;
+            for(NoteStore.Contact carrier:carriers) {
+                if(left>=Courier.CARRIERS)break;
+                try {
+                    byte[] sealed=Envelope.seal(page,revision,System.currentTimeMillis(),Courier.leave(sort,forWhom,inner),
+                        keys.signing(),Keys.publicKey(carrier.agreement));
+                    if(hand(where,node,carrier,sealed))left++;
+                } catch(Exception notThisOne){/* the next carrier, or none */}
+            }
+            if(left>0)android.util.Log.i("Mininotes/Post","left a copy with "+left+" device(s) that can carry it");
+        } catch(Exception notNow) {
+            android.util.Log.w("Mininotes/Post","could not leave a copy to be carried: "+notNow.getClass().getSimpleName());
+        }
+    }
+
+    /**
+     * Something left here to be carried to somebody else, or brought here by whoever carried it.
+     *
+     * <p>Left: kept, if it is for a device paired here whose build knows what it will be brought - and
+     * brought at once if they are there. Brought: opened as if it had come straight from whoever wrote it,
+     * which is who signed it, and then the device that brought it is told it can let go.
+     */
+    private static Landed carried(Context where,NoteStore store,Keys keys,NoteStore.Contact from,
+                                  Envelope.Opened opened,Courier.Said said) {
+        if(said.kind==Courier.LEAVE) {
+            final String forWhom=Courier.hex(said.forWhom);
+            NoteStore.Contact them=null;
+            for(NoteStore.Contact one:store.addresses())if(one.paired()&&forWhom.equals(fingerprint(one)))them=one;
+            if(them==null||forWhom.equals(fingerprint(from))||!doesCarry(where,them)) {
+                android.util.Log.i("Mininotes/Post","not carried: for a device this one cannot bring it to");
+                return new Landed(null,null);
+            }
+            boolean kept=store.carry(fingerprint(from),forWhom,Courier.hex(opened.page),said.sort,opened.revision,said.inner);
+            android.util.Log.i("Mininotes/Post",kept?"carrying something for another device":"not carried: something newer is held, or there is no room");
+            if(kept&&there(them))ANSWERS.execute(()->bring(where,store,keys,forWhom));
+            return new Landed(null,null);
+        }
+        Landed landed=arrived(where,store,keys,said.inner,true);
+        // Opened, written down, or found not to be anything: either way there is nothing more to bring.
+        final NoteStore.Contact carrier=from;final int collected=Receipt.collected(said.sort);
+        final byte[] page=opened.page;final long revision=opened.revision;
+        ANSWERS.execute(()->{
+            try {
+                // Something just arrived, so the node is up; where it is not, nothing is started for this.
+                MaximaNode node=Node.running()?Node.node(where):null;
+                if(node==null)return;
+                hand(where,node,carrier,Envelope.seal(page,revision,System.currentTimeMillis(),Receipt.wrap(collected),
+                    keys.signing(),Keys.publicKey(carrier.agreement)));
+            } catch(Exception notNow){/* it is brought again, and collected again */}
+        });
+        return landed;
+    }
+
+    private static final java.util.concurrent.atomic.AtomicBoolean BRINGING=new java.util.concurrent.atomic.AtomicBoolean();
+
+    /**
+     * What this device holds for others, brought to them. Blocking.
+     *
+     * @param only one device's fingerprint - which has just been heard from, so everything held for it goes
+     *             now - or null for everything whose turn it is
+     */
+    static void bring(Context where,NoteStore store,Keys keys,String only) {
+        if(!BRINGING.compareAndSet(false,true))return;
+        try {
+            MaximaNode node=Node.node(where);
+            if(node==null)return;
+            List<NoteStore.Carried> held=store.carried(only);
+            if(held.isEmpty())return;
+            java.util.Map<String,NoteStore.Contact> byKey=new java.util.HashMap<>();
+            for(NoteStore.Contact one:store.addresses())if(one.paired())byKey.put(fingerprint(one),one);
+            long now=System.currentTimeMillis();int brought=0;
+            for(NoteStore.Carried one:held) {
+                NoteStore.Contact them=byKey.get(one.recipient);
+                if(them==null||!doesCarry(where,them))continue;
+                // Just heard from: now, unless it went a moment ago. Otherwise, when its turn comes.
+                if(only!=null?now-one.tried<JUST_NOW&&now>=one.tried:!Courier.due(one.tried,one.tries,now))continue;
+                try {
+                    byte[] page=new byte[16];
+                    for(int at=0;at<16;at++)page[at]=(byte)Integer.parseInt(one.page.substring(at*2,at*2+2),16);
+                    byte[] sealed=Envelope.seal(page,one.revision,now,Courier.bring(one.sort,one.bytes),
+                        keys.signing(),Keys.publicKey(them.agreement));
+                    hand(where,node,them,sealed);
+                    store.broughtAgain(one);brought++;
+                } catch(Exception notThisOne){/* its turn comes again */}
+            }
+            if(brought>0)android.util.Log.i("Mininotes/Post","brought "+brought+" thing(s) carried for another device");
+        } catch(Exception notNow) {
+            android.util.Log.w("Mininotes/Post","could not bring what is carried: "+notNow.getClass().getSimpleName());
+        } finally {BRINGING.set(false);}
     }
 
     /**
@@ -501,6 +672,8 @@ final class Post {
                 android.util.Log.i("Mininotes/Post","not answered, so sent again: "+done.sent+" went, "
                     +done.failed+" did not");
             }
+            // And whatever is carried for others, brought again when its turn comes.
+            if(!store.carried(null).isEmpty())bring(where,store,keys,null);
         } catch(Exception notNow) {
             android.util.Log.w("Mininotes/Post","could not try again: "+notNow.getClass().getSimpleName());
         } finally {TRYING.set(false);}
@@ -546,7 +719,14 @@ final class Post {
      *
      * @return what to tell the reader, or null where the message was not ours to read
      */
-    static Landed arrived(Context where,NoteStore store,Keys keys,byte[] message) {
+    static Landed arrived(Context where,NoteStore store,Keys keys,byte[] message){return arrived(where,store,keys,message,false);}
+
+    /**
+     * @param brought whether it was carried here by another device rather than coming from its sender: the
+     *                sender was not heard from, and may be long gone, and what it carries is only a note or an
+     *                answer - never something else to carry
+     */
+    private static Landed arrived(Context where,NoteStore store,Keys keys,byte[] message,boolean brought) {
         try {
             Envelope.Opened opened=Envelope.open(message,keys.agreement().getPrivate());
             // Somebody taking up an offer, which arrives from a phone this one has never heard of - that
@@ -557,6 +737,13 @@ final class Post {
             if(accepted!=null) {
                 if(!java.util.Arrays.equals(Envelope.fingerprint(Keys.publicKey(accepted.signing)),
                     opened.sender))return new Landed(null,null);
+                // A plain hello from a device already paired here is its answer to ours: nothing to ask
+                // anybody, only to stop saying hello to it.
+                if(accepted.target.isEmpty())for(NoteStore.Contact known:store.addresses())
+                    if(known.signing.length>0&&java.util.Arrays.equals(Envelope.fingerprint(Keys.publicKey(known.signing)),opened.sender)) {
+                        store.answered(known.address);
+                        return new Landed(null,null);
+                    }
                 return new Landed(null,accepted);
             }
             // Who sent it: the envelope names a signing key by its fingerprint, and only a device already
@@ -569,6 +756,19 @@ final class Post {
             }
             if(from==null) {
                 android.util.Log.w("Mininotes/Post","dropped an arriving message: signed by no device paired here");
+                return new Landed(null,null);
+            }
+            if(!brought) {
+                // Heard from, so there: nothing sent to them for a while is left with anybody else, and
+                // whatever was being carried for them goes now.
+                final String who=fingerprint(from);
+                HEARD.put(who,System.currentTimeMillis());
+                if(!store.carried(who).isEmpty())ANSWERS.execute(()->bring(where,store,keys,who));
+                Courier.Said carried=Courier.open(opened.text);
+                if(carried!=null)return carried(where,store,keys,from,opened,carried);
+            } else if(Courier.open(opened.text)!=null) {
+                // Something to carry, inside something carried: never. Read as a note, it would be bytes
+                // written over somebody's words.
                 return new Landed(null,null);
             }
             String id=idFrom(opened.page);
@@ -621,6 +821,13 @@ final class Post {
                 return Landed.left(from.name+" removed you from a "+(offAt==Sharing.Scope.PAGE?"note"
                     :offAt==Sharing.Scope.BOOK?"book":"collection")+". Your copy stays on this phone.",id);
             }
+            if((about==Receipt.COLLECTED||about==Receipt.COLLECTED_ANSWER)&&!brought) {
+                // They have what was being carried for them: that note, or that answer, up to that revision.
+                int gone=store.collected(fingerprint(from),Courier.hex(opened.page),
+                    about==Receipt.COLLECTED_ANSWER?Courier.ANSWER:Courier.NOTE,opened.revision);
+                android.util.Log.i("Mininotes/Post","collected: "+gone+" thing(s) carried for them let go");
+                return new Landed(null,null);
+            }
             if(about!=0&&about!=Receipt.HAVE&&about!=Receipt.TOOK)return new Landed(null,null);   // a later build
             if(about!=0) {
                 boolean believed=store.acknowledged(from.address,id,opened.revision,about==Receipt.TOOK);
@@ -630,6 +837,8 @@ final class Post {
                 return new Landed(null,null,id,believed);
             }
             Parcel.Sent parcel=Parcel.open(opened.text);
+            // Their build carries: from now on they may be left things, and brought them.
+            if(parcel!=null&&parcel.carries)carries(where,from);
             // Something sent before notes carried their shelf: the text and nothing else. Still readable,
             // and it goes wherever anything whose shelf we were not told goes.
             if(parcel==null) {
@@ -672,7 +881,7 @@ final class Post {
             if(may==null||!may.level.writes()) {
                 android.util.Log.i("Mininotes/Post","not taken in: "+(may==null?"they were never given this"
                     :may.level==Sharing.Level.GONE?"they were taken off this, and are told again":"they may only read this"));
-                if(parcel.answer){speaks(where,from);answer(where,keys,from,opened.page,opened.revision,false);}
+                if(parcel.answer){speaks(where,from);answer(where,store,keys,from,opened.page,opened.revision,false);}
                 if(may!=null&&may.level==Sharing.Level.GONE&&store.saysWhoHas(may.scope,may.target)&&doesSpeak(where,from))
                     tellOff(where,keys,from,opened.page,may.changed,Receipt.removed(may.scope));
                 return Landed.people(id);
@@ -691,7 +900,7 @@ final class Post {
                 // Whether this phone's note now says exactly what they sent - which is what lets them
                 // count this revision as one both phones have, and not only one that arrived.
                 boolean took=said.what==Arriving.What.NEW||said.what==Arriving.What.NEWER;
-                answer(where,keys,from,opened.page,opened.revision,took);
+                answer(where,store,keys,from,opened.page,opened.revision,took);
             }
             // Nothing in it changed. The marks and the box are asked again, because who may do what can have.
             if(same&&said.what!=Arriving.What.MERGED)return Landed.people(id);

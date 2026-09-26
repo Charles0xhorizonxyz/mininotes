@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: LicenseRef-Mininotes-NoPaidProducts
-// Apache-2.0 with the Commons Clause and a paid-product condition. See LICENSE.
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Mininotes is free software: GNU General Public License, version 3 or later. See LICENSE.
 package org.mininotes.android;
 
 import android.content.ContentProvider;
@@ -26,14 +26,13 @@ public final class Lending extends ContentProvider {
     /** The address for one kept file. */
     static Uri of(String id){return Uri.parse("content://"+AUTHORITY+"/"+id);}
 
-    private NoteStore store;
 
     @Override public boolean onCreate(){return true;}
 
     /** Opened lazily and left open: the provider lives as long as the app does. */
-    private synchronized NoteStore store() {
-        if(store==null)store=new NoteStore(getContext());
-        return store;
+    /** The process's own notebook, so a locked one is lent only while it is open. */
+    private NoteStore store() throws FileNotFoundException {
+        try{return NoteStore.of(getContext());}catch(IllegalStateException locked){throw new FileNotFoundException("The notebook is locked");}
     }
 
     private NoteStore.Held asked(Uri uri) throws FileNotFoundException {
@@ -49,7 +48,13 @@ public final class Lending extends ContentProvider {
         NoteStore.Held held=asked(uri);
         File file=store().fileFor(held.id);
         if(!file.isFile())throw new FileNotFoundException("The file is gone");
-        return ParcelFileDescriptor.open(file,ParcelFileDescriptor.MODE_READ_ONLY);
+        if(!PhoneLock.sealed(file))return ParcelFileDescriptor.open(file,ParcelFileDescriptor.MODE_READ_ONLY);
+        // Sealed: opened into a pipe as the other app reads it, so no plain copy is ever written down.
+        try {
+            ParcelFileDescriptor[] pipe=ParcelFileDescriptor.createPipe();
+            new Thread(()->{try(java.io.OutputStream out=new ParcelFileDescriptor.AutoCloseOutputStream(pipe[1])){PhoneLock.copyOut(file,out);}catch(java.io.IOException gone){/* they stopped reading */}},"mininotes-lending").start();
+            return pipe[0];
+        } catch(java.io.IOException e){throw new FileNotFoundException("Could not open the file");}
     }
 
     @Override public String getType(Uri uri) {

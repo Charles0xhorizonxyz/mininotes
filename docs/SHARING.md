@@ -220,6 +220,15 @@ The reason is size. A Maxima message is a message, not a transfer: it is bounded
 
 Until then a file is `▫` — on this device only — whatever the note it sits in says, and a backup is the way to move one, which is why a backup became a zip.
 
+## Carried by a third device
+
+Nothing in Maxima waits, so two devices that are never on at the same moment never meet: the PC shut just after something was written in it, a phone that was out of signal just then. Since v0.0.128 (PC v0.0.018) a third device that is on carries it between them (`Courier`).
+
+- **When a copy is left.** A note going to a device not heard from in the last two minutes is also *left* with up to three other paired devices whose build has said it carries (a flag at the end of every note, `Parcel.carries`; nothing of this goes to a device that has not said it, because an older build would read it as a note and write it over somebody's words). An answer to a note that was carried goes back the same way, or the writer would send it again for ever.
+- **What the carrier holds.** The note exactly as it was sealed for the device it is for. The carrier cannot open it, change it unseen, or pass it off as its own; it knows who it is from, who it is for, which note by its id, and how big. One copy per sender, recipient, note and kind — a newer revision replaces an older — at most 500 things and 16 MB together, and nothing longer than 30 days (`carried`, schema 23).
+- **Bringing it.** As soon as the device it is for is heard from, and otherwise after a minute, two, four, eight and then every ten, because a relay says yes for a device that is not there. The device it is for opens it as if it had come straight, answers the writer, and tells the carrier *collected* (`Receipt.COLLECTED`, `COLLECTED_ANSWER`); only that lets go of it.
+- **What it cannot do.** With only two devices there is no third to carry. A carrier holds only for a device it is paired with itself. A carrier whose notebook is locked keeps what arrives in its inbox and carries it once opened. A message inside something carried is never carried again.
+
 ## Where sync actually stands, on a real phone
 
 The pad runs its own Maxima node: the transport's core is vendored into the app, started with it, and attaches to the public relays. `⋮` → **Profile** shows the address it was given, the code another device scans, and a checklist of what is and is not working — whether a relay has answered, whether there is anybody to send to, whether their keys are known.

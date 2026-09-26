@@ -85,7 +85,7 @@ public class UpdateTest {
 
     // ---- where the build is, and whether it is the one it says -----------------------------------------------
 
-    private static final String SOURCE="https://github.com/Charles0xhorizonxyz/mininotes";
+    private static final String SOURCE="https://github.com/mininotesorg/mininotes";
 
     @Test public void theBuildIsWhereTheWorkflowPutsIt() {
         assertEquals(SOURCE+"/releases/download/v0.0.108/Mininotes-0.0.108.apk",Update.asset(SOURCE,"0.0.108"));

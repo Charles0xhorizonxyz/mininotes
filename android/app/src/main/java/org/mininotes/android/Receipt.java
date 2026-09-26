@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: LicenseRef-Mininotes-NoPaidProducts
-// Apache-2.0 with the Commons Clause and a paid-product condition. See LICENSE.
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Mininotes is free software: GNU General Public License, version 3 or later. See LICENSE.
 package org.mininotes.android;
 
 /**
@@ -115,6 +115,18 @@ final class Receipt {
             default: return null;
         }
     }
+
+    /**
+     * "I have what you were carrying for me." Said to a device that brought something another device left
+     * with it (see {@link Courier}), which then lets go of it. Which note, and up to which revision, ride
+     * in the envelope as they do for every answer. Only ever said to a device that has just brought
+     * something, so only to one that knows what it means. One number for a note brought, one for an answer,
+     * so that collecting one never lets go of the other.
+     */
+    static final int COLLECTED=10, COLLECTED_ANSWER=11;
+
+    /** The number that says what was brought has been collected, by what kind of thing it was. */
+    static int collected(int sort){return sort==Courier.ANSWER?COLLECTED_ANSWER:COLLECTED;}
 
     private Receipt(){}
 

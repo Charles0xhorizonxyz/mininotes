@@ -1,12 +1,12 @@
-// SPDX-License-Identifier: LicenseRef-Mininotes-NoPaidProducts
-// Apache-2.0 with the Commons Clause and a paid-product condition. See LICENSE.
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Mininotes is free software: GNU General Public License, version 3 or later. See LICENSE.
 package org.mininotes.android;
 
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
-import android.database.sqlite.SQLiteDatabase;
-import android.database.sqlite.SQLiteOpenHelper;
+import net.zetetic.database.sqlcipher.SQLiteDatabase;
+import net.zetetic.database.sqlcipher.SQLiteOpenHelper;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -138,7 +138,28 @@ final class NoteStore extends SQLiteOpenHelper {
     }
 
     private final Context where;
-    NoteStore(Context c) { super(c,"mininotes.db",null,SchemaMigrations.VERSION); where=c.getApplicationContext(); }
+    /**
+     * The notebook's key while it is unlocked; null when it has no lock. SQLCipher takes an empty key as no
+     * encryption at all, so a notebook without a lock is the same plain file it always was.
+     */
+    private static volatile byte[] key;
+    static void unlock(byte[] given){key=given==null?null:given.clone();only=null;}
+    static byte[] key(){byte[] k=key;return k==null?null:k.clone();}
+    /** Locked again: the open notebook closed, and its key let go. */
+    static synchronized void lockAgain(){if(only!=null){try{only.close();}catch(RuntimeException busy){/* closed as it can be */}}only=null;key=null;}
+    static {
+        // SQLCipher's own SQLite. Only on the phone: the PC's build of this class has a SQLite of its own.
+        try{System.loadLibrary("sqlcipher");}catch(Throwable notHere){/* not Android */}
+    }
+
+    NoteStore(Context c){this(c,key);}
+    NoteStore(Context c,byte[] with){this(c,with,"mininotes.db");}
+    /** Another file of the same kind: the copy being checked while the lock goes on or comes off. */
+    NoteStore(Context c,byte[] with,String file) {
+        // The key handed over in SQLCipher's raw-key form, x'…', so it is used as it is and not derived again.
+        super(c,file,with==null?new byte[0]:Vault.pragma(with).getBytes(java.nio.charset.StandardCharsets.US_ASCII),null,SchemaMigrations.VERSION,0,null,null,false);
+        where=c.getApplicationContext();
+    }
 
     /**
      * The one notebook this process has.
@@ -150,7 +171,10 @@ final class NoteStore extends SQLiteOpenHelper {
      */
     private static NoteStore only;
     static synchronized NoteStore of(Context c) {
-        if(only==null)only=new NoteStore(c.getApplicationContext());
+        if(only==null){
+            if(key==null&&new java.io.File(c.getApplicationContext().getFilesDir(),"vault.key").isFile())throw new IllegalStateException("The notebook is locked.");
+            only=new NoteStore(c.getApplicationContext());
+        }
         return only;
     }
 
@@ -1197,9 +1221,8 @@ final class NoteStore extends SQLiteOpenHelper {
     Object[] readOnlyHere(String id) {
         Note note=get(id);
         if(note==null||!note.theirs)return new Object[]{false,""};
-        Sharing.Level may=myLevel(Sharing.Scope.PAGE,id);
         Contact who=address(note.origin);
-        return new Object[]{may==Sharing.Level.READ,who==null?"":who.name};
+        return new Object[]{onlyReads(id),who==null?"":who.name};
     }
 
     /**
@@ -1881,6 +1904,74 @@ final class NoteStore extends SQLiteOpenHelper {
         return all;
     }
 
+    // ---- what this device carries for others: see Courier ----------------------------------------------------
+
+    /** One thing held for somebody: who left it and who it is for by the fingerprints of their keys. */
+    static final class Carried {
+        final String sender,recipient,page; final int sort; final long revision,kept,tried; final int tries;
+        final byte[] bytes;
+        Carried(String sender,String recipient,String page,int sort,long revision,byte[] bytes,long kept,long tried,int tries) {
+            this.sender=sender;this.recipient=recipient;this.page=page;this.sort=sort;this.revision=revision;
+            this.bytes=bytes;this.kept=kept;this.tried=tried;this.tries=tries;
+        }
+    }
+
+    /**
+     * Something left here for somebody else, kept - unless a newer one of the same is already here, or there
+     * is no room. A newer revision of the same note from the same device replaces the older.
+     *
+     * @return whether it is kept
+     */
+    boolean carry(String sender,String recipient,String page,int sort,long revision,byte[] bytes) {
+        long now=System.currentTimeMillis();
+        SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        try {
+            db.delete("carried","kept<?",new String[]{String.valueOf(now-Courier.KEPT_FOR)});
+            long had=-1;int count=0;long size=0;
+            try(Cursor c=db.query("carried",new String[]{"revision"},"sender=? AND recipient=? AND page=? AND sort=?",
+                    new String[]{sender,recipient,page,String.valueOf(sort)},null,null,null,"1")) {
+                if(c.moveToFirst())had=c.getLong(0);
+            }
+            if(had>revision){db.setTransactionSuccessful();return false;}
+            try(Cursor c=db.rawQuery("SELECT COUNT(*),COALESCE(SUM(size),0) FROM carried",null)) {
+                if(c.moveToFirst()){count=c.getInt(0);size=c.getLong(1);}
+            }
+            // Room for a new one; one replacing another takes no more room than it did.
+            if(had<0&&(count>=Courier.MOST_KEPT||size+bytes.length>Courier.MOST_BYTES)){db.setTransactionSuccessful();return false;}
+            ContentValues v=new ContentValues();
+            v.put("sender",sender);v.put("recipient",recipient);v.put("page",page);v.put("sort",sort);
+            v.put("revision",revision);v.put("bytes",android.util.Base64.encodeToString(bytes,android.util.Base64.NO_WRAP));v.put("size",bytes.length);
+            v.put("kept",now);v.put("tried",0);v.put("tries",0);
+            db.insertWithOnConflict("carried",null,v,SQLiteDatabase.CONFLICT_REPLACE);
+            db.setTransactionSuccessful();
+            return true;
+        } finally {db.endTransaction();}
+    }
+
+    /** Everything held for one device, or for everybody when {@code recipient} is null; what is too old is let go first. */
+    List<Carried> carried(String recipient) {
+        getWritableDatabase().delete("carried","kept<?",new String[]{String.valueOf(System.currentTimeMillis()-Courier.KEPT_FOR)});
+        List<Carried> all=new ArrayList<>();
+        try(Cursor c=getReadableDatabase().query("carried",new String[]{"sender","recipient","page","sort","revision","bytes","kept","tried","tries"},
+                recipient==null?null:"recipient=?",recipient==null?null:new String[]{recipient},null,null,"kept ASC")) {
+            while(c.moveToNext())all.add(new Carried(c.getString(0),c.getString(1),c.getString(2),c.getInt(3),c.getLong(4),
+                android.util.Base64.decode(c.getString(5),android.util.Base64.NO_WRAP),c.getLong(6),c.getLong(7),c.getInt(8)));
+        }
+        return all;
+    }
+
+    /** Brought once more: when, and how many times, so the next try waits longer. */
+    void broughtAgain(Carried one) {
+        getWritableDatabase().execSQL("UPDATE carried SET tried=?,tries=tries+1 WHERE sender=? AND recipient=? AND page=? AND sort=? AND revision=?",
+            new Object[]{System.currentTimeMillis(),one.sender,one.recipient,one.page,one.sort,one.revision});
+    }
+
+    /** They have it: whatever was held for them about that note, up to that revision, is let go. */
+    int collected(String recipient,String page,int sort,long revision) {
+        return getWritableDatabase().delete("carried","recipient=? AND page=? AND sort=? AND revision<=?",
+            new String[]{recipient,page,String.valueOf(sort),String.valueOf(revision)});
+    }
+
     /** The revision every note on the shelves is at now, by id. */
     Map<String,Long> revisions() {
         Map<String,Long> now=new HashMap<>();
@@ -1931,7 +2022,20 @@ final class NoteStore extends SQLiteOpenHelper {
 
     /** What one thing owes, ready to be counted or shown by name. */
     List<Outbox.Wait> owed(Branch.Kind kind,String id) {
-        return Outbox.waiting(shares(),pagesUnder(kind,id),sent());
+        List<Outbox.Wait> owed=new ArrayList<>();
+        Map<String,Boolean> reads=new HashMap<>();
+        // Not a copy this phone may only read. Every other holder refuses what a reader sends (Post.arrived
+        // weighs the sender's standing), so counting it as owed only kept its mark waiting and the retries
+        // going every quarter of an hour, for ever, for something nobody would ever take.
+        for(Outbox.Wait wait:Outbox.waiting(shares(),pagesUnder(kind,id),sent()))
+            if(!reads.computeIfAbsent(wait.page,this::onlyReads))owed.add(wait);
+        return owed;
+    }
+
+    /** A note that came from somebody and that this phone was given to read, not to write in. */
+    boolean onlyReads(String id) {
+        Note note=get(id);
+        return note!=null&&note.theirs&&myLevel(Sharing.Scope.PAGE,id)==Sharing.Level.READ;
     }
 
     private static int held(Map<String,Set<String>> owedIn,String id) {

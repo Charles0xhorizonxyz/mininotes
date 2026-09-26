@@ -1,0 +1,92 @@
+plugins { id 'java'; id 'application' }
+version = '0.0.021'
+repositories { mavenCentral() }
+java { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
+application { mainClass = 'org.mininotes.android.Desktop' }
+dependencies {
+    // SQLite3 Multiple Ciphers: the same SQLite, able to keep the notebook encrypted when a password is set.
+    implementation 'io.github.willena:sqlite-jdbc:3.53.4.0'
+    implementation 'org.json:json:20260719'
+    implementation 'com.google.zxing:core:3.5.3'
+    implementation 'net.java.dev.jna:jna-platform:5.18.0'
+    implementation 'com.github.sarxos:webcam-capture:0.3.12'
+    implementation 'com.formdev:flatlaf:3.6'
+    runtimeOnly 'org.slf4j:slf4j-nop:1.7.36'
+    testImplementation 'junit:junit:4.13.2'
+}
+
+// Keep the proven store and wire protocol in one place. Only platform names are
+// adapted; generated files are never edited or committed.
+def portable = ['Arriving','Attachment','Background','Envelope','Feedback','Find','Hello',
+    'Merge','Outbox','Pairing','Parcel','Point','Receipt','Reorder','RevisionClock',
+    'SchemaMigrations','SyncStatus','Sha3','Sharing','Tint','Update','Vault','Sealed','Courier']
+def adapted = ['NoteStore','Post','Node']
+def androidSource = file('../android/app/src/main/java/org/mininotes/android')
+def generated = layout.buildDirectory.dir('generated/sources/shared')
+tasks.register('sharedSources') {
+    inputs.files((portable + adapted).collect { new File(androidSource, it + '.java') })
+    outputs.dir(generated)
+    doLast {
+        def dest = generated.get().dir('org/mininotes/android').asFile
+        dest.mkdirs()
+        (portable + adapted).each { name ->
+            def source = new File(androidSource, name + '.java').getText('UTF-8')
+            if (adapted.contains(name)) {
+                source = source.replace('net.zetetic.database.sqlcipher.', 'org.mininotes.desktop.platform.database.sqlite.')
+                    .replace('android.content.', 'org.mininotes.desktop.platform.content.')
+                    .replace('android.database.', 'org.mininotes.desktop.platform.database.')
+                    .replace('android.util.', 'org.mininotes.desktop.platform.util.')
+                if (name == 'Node') {
+                    source = source.replace('where.checkSelfPermission(android.Manifest.permission.INTERNET)', '0')
+                        .replace('org.mininotes.desktop.platform.content.pm.PackageManager.PERMISSION_GRANTED', '0')
+                        .replace('android.os.Build.MODEL', '"Windows PC"')
+                    source = source.replace('    private Node(){}', '    private Node(){}\n    static synchronized void retryStart(){if(node==null)tried=false;}')
+                }
+            }
+            new File(dest, name + '.java').setText(source, 'UTF-8')
+        }
+    }
+}
+sourceSets {
+    main {
+        java.srcDir generated
+        java.srcDir '../android/maxima-core/src/main/java'
+        resources.srcDir '../android/maxima-core/src/main/resources'
+    }
+    test {
+        java.srcDir '../android/app/src/test/java'
+        java.exclude '**/QrTest.java', '**/QrReadingTest.java'
+    }
+}
+tasks.named('compileJava') { dependsOn 'sharedSources' }
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+test { systemProperty 'sun.awt.fontconfig', file('fontconfig/fontconfig.properties').absolutePath; maxHeapSize = '256m'; testLogging { events 'failed'; exceptionFormat 'full' } }
+tasks.register('transportProbe', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'org.mininotes.android.WindowsTransportProbe'
+    maxHeapSize = '192m'
+}
+tasks.register('connectivityProbe', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'org.mininotes.android.WindowsConnectivityProbe'
+    maxHeapSize = '192m'
+}
+tasks.register('windowsIcon', JavaExec) {
+    dependsOn classes
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'org.mininotes.android.DesktopIcon'
+    args layout.buildDirectory.dir('icons').get().asFile.absolutePath
+}
+
+tasks.register('packageInput', Sync) {
+    dependsOn jar, windowsIcon
+    from(tasks.jar)
+    from(configurations.runtimeClasspath)
+    from('../LICENSE'); from('../NOTICE'); from('THIRD-PARTY.txt')
+    from('licenses') { into 'licenses' }
+    from('../android/maxima-core/NOTICE') { rename { 'MAXIMA-NOTICE.txt' } }
+    from('fontconfig/fontconfig.properties')
+    into layout.buildDirectory.dir('package-input')
+}

@@ -83,11 +83,11 @@ public class ReceiptTest {
     }
 
     @Test public void aNoteFromABuildBeforeAnswersAsksForNone() throws Exception {
-        // Such a build wrote everything but the last nine bytes - the asking, and what the note was written
-        // on top of. It must read whole, and it must not be answered: it would take the answer for a note
-        // written the old way and put five bytes over somebody's writing.
+        // Such a build wrote everything but the last ten bytes - the asking, what the note was written on
+        // top of, and whether its build carries. It must read whole, and it must not be answered: it would
+        // take the answer for a note written the old way and put five bytes over somebody's writing.
         byte[] whole=Parcel.wrap(note(true));
-        Parcel.Sent older=Parcel.open(java.util.Arrays.copyOf(whole,whole.length-9));
+        Parcel.Sent older=Parcel.open(java.util.Arrays.copyOf(whole,whole.length-10));
         assertNotNull(older);
         assertEquals("Milk\nBread",older.body);
         assertEquals("BOOK",older.scope);
@@ -108,8 +108,9 @@ public class ReceiptTest {
         assertEquals(-1L,Parcel.open(Parcel.wrap(note(true))).basedOn);
         byte[] whole=Parcel.wrap(new Parcel.Sent("c","Perso","b","Text","","Milk",true,
             java.util.Collections.<Parcel.Member>emptyList(),"BOOK","b",true,13L));
-        // A build that asked to be answered but knew nothing of this wrote eight bytes fewer.
-        Parcel.Sent older=Parcel.open(java.util.Arrays.copyOf(whole,whole.length-8));
+        // A build that asked to be answered but knew nothing of this wrote nine bytes fewer: these eight,
+        // and the one after them saying whether it carries.
+        Parcel.Sent older=Parcel.open(java.util.Arrays.copyOf(whole,whole.length-9));
         assertNotNull(older);
         assertTrue(older.answer);
         assertEquals(-1L,older.basedOn);

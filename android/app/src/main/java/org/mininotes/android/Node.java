@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: LicenseRef-Mininotes-NoPaidProducts
-// Apache-2.0 with the Commons Clause and a paid-product condition. See LICENSE.
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Mininotes is free software: GNU General Public License, version 3 or later. See LICENSE.
 package org.mininotes.android;
 
 import android.content.Context;
@@ -55,6 +55,28 @@ final class Node {
      * like a node that was working, until something was sent to it.
      */
     private static final int BEAT=30;
+    /**
+     * The same, while nobody is looking at the pad. Every round wakes the phone, and a keep-alive is only
+     * due every two minutes, so a round every thirty seconds in a pocket was three wake-ups in four spent
+     * finding nothing due. Ninety still lands inside every two-minute window.
+     */
+    private static final int AWAY_BEAT=90;
+    /** Whether the pad is on screen. Rounds come at {@link #BEAT} while it is, {@link #AWAY_BEAT} while not. */
+    private static volatile boolean near;
+
+    /** Said by the screen as it comes and goes. Coming back brings the next round forward. */
+    static void near(boolean on) {
+        boolean was=near;near=on;
+        java.util.concurrent.ScheduledExecutorService up;
+        synchronized(Node.class){up=keeper;}
+        if(on&&!was&&up!=null)try{up.execute(Node::lookAfter);}catch(RuntimeException stopped){/* none */}
+    }
+
+    /**
+     * One round now, on the caller's thread: the phone's own alarm, which is what still runs while the
+     * phone sleeps and the upkeep thread does not. Waits for nothing it does not have to.
+     */
+    static void roundNow(){lookAfter();}
 
     private static MaximaNode node;
     private static boolean tried;
@@ -221,7 +243,16 @@ final class Node {
         node=made;
         keeper=java.util.concurrent.Executors.newSingleThreadScheduledExecutor(work->{
             Thread one=new Thread(work,"mininotes-node-upkeep");one.setDaemon(true);return one;});
-        keeper.scheduleWithFixedDelay(Node::lookAfter,BEAT,BEAT,java.util.concurrent.TimeUnit.SECONDS);
+        next();
+    }
+
+    /** The next round, as far off as whether anybody is looking allows. */
+    private static void next() {
+        java.util.concurrent.ScheduledExecutorService up;
+        synchronized(Node.class){up=keeper;}
+        if(up==null)return;
+        try{up.schedule(()->{try{lookAfter();}finally{next();}},near?BEAT:AWAY_BEAT,java.util.concurrent.TimeUnit.SECONDS);}
+        catch(RuntimeException stopped){/* shut down */}
     }
 
     /**
@@ -236,6 +267,13 @@ final class Node {
         MaximaNode up;
         synchronized(Node.class){up=node;}
         if(up==null)return;
+        // One round at a time: the alarm and the upkeep thread can both arrive at once after a sleep.
+        if(!ROUND.compareAndSet(false,true))return;
+        try{round(up);}finally{ROUND.set(false);}
+    }
+    private static final java.util.concurrent.atomic.AtomicBoolean ROUND=new java.util.concurrent.atomic.AtomicBoolean();
+
+    private static void round(MaximaNode up) {
         try {
             int before=up.myAddresses().size();
             up.maintain(WAITING);

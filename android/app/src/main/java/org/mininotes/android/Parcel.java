@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: LicenseRef-Mininotes-NoPaidProducts
-// Apache-2.0 with the Commons Clause and a paid-product condition. See LICENSE.
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Mininotes is free software: GNU General Public License, version 3 or later. See LICENSE.
 package org.mininotes.android;
 
 import java.io.ByteArrayOutputStream;
@@ -93,10 +93,23 @@ final class Parcel {
              String scope,String target,boolean answer) {
             this(collection,collectionName,book,bookName,title,body,writes,members,scope,target,answer,-1L);
         }
+        /**
+         * Whether the sender's build can carry things for others and be brought them - see {@link Courier}.
+         *
+         * <p>Said, never assumed, for the reason {@link #answer} is: a build that does not know that format
+         * would read it as a note written the oldest way and write it over somebody's words. So nothing of
+         * it goes to a device until a note from that device has said this.
+         */
+        final boolean carries;
         Sent(String collection,String collectionName,String book,String bookName,
              String title,String body,boolean writes,java.util.List<Member> members,
              String scope,String target,boolean answer,long basedOn) {
-            this.answer=answer;this.basedOn=basedOn<0?-1L:basedOn;
+            this(collection,collectionName,book,bookName,title,body,writes,members,scope,target,answer,basedOn,false);
+        }
+        Sent(String collection,String collectionName,String book,String bookName,
+             String title,String body,boolean writes,java.util.List<Member> members,
+             String scope,String target,boolean answer,long basedOn,boolean carries) {
+            this.answer=answer;this.basedOn=basedOn<0?-1L:basedOn;this.carries=carries;
             this.collection=collection;this.collectionName=collectionName;
             this.book=book;this.bookName=bookName;this.title=title;this.body=body;this.writes=writes;
             this.members=members==null?java.util.Collections.<Member>emptyList():members;
@@ -138,6 +151,8 @@ final class Parcel {
         // where it always stopped.
         out.writeBoolean(sent.answer);
         out.writeLong(sent.basedOn);
+        // And after that, what a build before carrying never wrote: it reads the number above and stops.
+        out.writeBoolean(sent.carries);
         out.flush();
         return bytes.toByteArray();
     }
@@ -176,8 +191,9 @@ final class Parcel {
                 if(in.available()<8)throw new IllegalArgumentException("Cut short");
                 basedOn=in.readLong();
             }
+            boolean carries=in.available()>0&&in.readBoolean();
             return new Sent(collection,collectionName,book,bookName,title,body,writes,members,scope,target,
-                answer,basedOn);
+                answer,basedOn,carries);
         } catch(IOException | IllegalArgumentException broken) {
             // Half a parcel is not a parcel. Nothing partly read is handed back.
             return null;

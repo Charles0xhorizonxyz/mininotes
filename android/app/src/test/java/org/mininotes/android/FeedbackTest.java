@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: LicenseRef-Mininotes-NoPaidProducts
-// Apache-2.0 with the Commons Clause and a paid-product condition. See LICENSE.
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Mininotes is free software: GNU General Public License, version 3 or later. See LICENSE.
 package org.mininotes.android;
 
 import org.junit.Test;
@@ -11,7 +11,7 @@ import static org.junit.Assert.assertTrue;
 /** What the app hands to the browser when somebody has something to say. */
 public class FeedbackTest {
 
-    private static final String SOURCE="https://github.com/Charles0xhorizonxyz/mininotes";
+    private static final String SOURCE="https://github.com/mininotesorg/mininotes";
     private static final String ABOUT="Mininotes 0.0.58 · Android 16 · Pixel 7";
 
     /** The form is named, and every field the form asks for is filled in. */

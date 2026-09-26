@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The icon's green: the square behind the notepad, the same as ic_note and the PC's icon. -->
+    <color name="icon_ground">#285646</color>
+</resources>

@@ -86,6 +86,13 @@ jobs:
           fi
           cp "$SRC" "out/$NAME"
           ( cd out && sha256sum "$NAME" > "$NAME.sha256" )
+          # And the same file under a name that never changes, so the website can link
+          # releases/latest/download/Mininotes.apk and a download is one click. The
+          # versioned name stays: it is what the app's own update fetches.
+          if [ -n "${{ steps.sign.outputs.apk }}" ]; then
+            cp "$SRC" out/Mininotes.apk
+            ( cd out && sha256sum Mininotes.apk > Mininotes.apk.sha256 )
+          fi
           ls -l out
 
       - name: Publish
@@ -99,3 +106,55 @@ jobs:
 
             The pad works on its own, and nothing else has to be installed to
             share between phones: it is its own Maxima node. See the README.
+
+            Windows: download `Mininotes-Windows-….zip`, check it with the
+            `.sha256` beside it, extract it and open `Mininotes\Mininotes.exe`.
+            A PC already running Mininotes offers the update itself.
+
+  # The Windows build of the same commit, added to the same release once the phone's is published. Every
+  # PC reads dist/latest-windows.txt and then fetches releases/latest/download/Mininotes-Windows-<that>.zip,
+  # so each release has to carry it, and the file and the build have to agree on its version.
+  windows:
+    needs: release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The Windows build and latest-windows.txt agree
+        id: name
+        shell: pwsh
+        run: |
+          $build = (Select-String -Path windows/build.gradle -Pattern "^version = '([^']*)'").Matches[0].Groups[1].Value
+          $said = (Get-Content dist/latest-windows.txt -Raw).Trim()
+          "windows build=$build latest-windows.txt=$said"
+          if ($build -ne $said) { Write-Error "windows/build.gradle says $build but dist/latest-windows.txt says $said"; exit 1 }
+          "version=$build" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Test and package
+        shell: pwsh
+        run: ./windows/build.ps1 -Package
+
+      - name: Gather
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory out | Out-Null
+          $name = "Mininotes-Windows-${{ steps.name.outputs.version }}.zip"
+          Copy-Item "dist/latest/$name" out/
+          Copy-Item "dist/latest/$name.sha256" out/
+          # The same zip under a name that never changes, for the website's one-click link.
+          Copy-Item "dist/latest/$name" out/Mininotes-Windows.zip
+          $hash = (Get-FileHash out/Mininotes-Windows.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Mininotes-Windows.zip" | Set-Content -Encoding ascii out/Mininotes-Windows.zip.sha256
+          Get-ChildItem out
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*

@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: LicenseRef-Mininotes-NoPaidProducts
-// Apache-2.0 with the Commons Clause and a paid-product condition. See LICENSE.
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Mininotes is free software: GNU General Public License, version 3 or later. See LICENSE.
 package org.mininotes.android;
 
 import org.junit.Test;
@@ -116,18 +116,19 @@ public class MembershipTest {
         List<Parcel.Member> members=new ArrayList<>();
         members.add(new Parcel.Member("k","MxA@h:1","Ana",Sharing.Level.WRITE.said(),1L));
         byte[] whole=Parcel.wrap(new Parcel.Sent("c","W","b","M","T","body",true,members,"BOOK","b"));
-        // Nine bytes come after the membership now - one saying whether the sender wants answering, eight
-        // saying what the note was written on top of. A parcel that ends cleanly before either of them is
-        // not truncated: it is what an earlier build wrote, and it carries the whole membership.
-        final int tail=9;
-        for(int cut:new int[]{whole.length-8,whole.length-tail}) {
+        // Ten bytes come after the membership now - one saying whether the sender wants answering, eight
+        // saying what the note was written on top of, one saying whether its build carries. A parcel that
+        // ends cleanly before any of them is not truncated: it is what an earlier build wrote, and it
+        // carries the whole membership.
+        final int tail=10;
+        for(int cut:new int[]{whole.length-1,whole.length-9,whole.length-tail}) {
             Parcel.Sent before=Parcel.open(java.util.Arrays.copyOf(whole,cut));
             assertNotNull("cut to "+cut,before);
             assertEquals(1,before.members.size());
             assertEquals("Ana",before.members.get(0).name);
         }
         // One that ends part of the way through a number is cut short, and is refused like any other.
-        for(int cut=whole.length-1;cut>whole.length-8;cut--)
+        for(int cut=whole.length-2;cut>whole.length-9;cut--)
             assertNull("cut to "+cut,Parcel.open(java.util.Arrays.copyOf(whole,cut)));
         for(int cut=whole.length-tail-1;cut>whole.length-tail-20&&cut>0;cut--) {
             byte[] part=new byte[cut];

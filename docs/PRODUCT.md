@@ -59,7 +59,7 @@ These tiers are a proposed scope, not a promise that every notes app has every f
 
 ## Open-source requirements
 
-The project licence is the Apache License 2.0 with the Commons Clause and a paid-product condition, in LICENSE — source-available rather than OSI open source, chosen deliberately (the paragraph that follows predates that choice). The vendored Maxima core is its author's, redistributed with their permission and credited in NOTICE; it is not under this licence. No copyright assignment is required for contributions.
+The project licence is the GNU General Public License, version 3 or later, in LICENSE (since 2026-09-26; it was source-available before, Apache 2.0 with the Commons Clause and a paid-product condition). The vendored Maxima core is its author's, redistributed with their permission and credited in NOTICE; it is not under this licence. No copyright assignment is required for contributions.
 
 Keep the Android client, browser/desktop client, sync protocol, any relay, migrations, tests and build scripts public. Use open formats and document encryption/recovery so an independent client can recover data. No proprietary analytics, login, push provider or paid backend is required. Publish build requirements, pinned dependencies, third-party notices, source tags and artifact hashes. Target independently reproducible APK builds; do not claim reproducibility until separate clean builds match. APK signing is separate from compilation; never commit signing keys. The repository was published on 2026-09-21 — private until the transport's author had been asked and had answered, which they did on 2026-09-22 — and v0.0.107 is its first release.
 

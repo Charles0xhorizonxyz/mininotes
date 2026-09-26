@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- For themed icons (Android 13 and later): the same notepad as one shape, which the phone colours itself. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:strokeColor="#FF000000" android:strokeWidth="3" android:strokeLineJoin="round" android:pathData="M39,33h31.5v43.5h-31.5z"/>
+    <path android:strokeColor="#FF000000" android:strokeWidth="3" android:pathData="M45,33v43.5M52.5,45h13.5M52.5,54h13.5M52.5,63h9"/>
+</vector>

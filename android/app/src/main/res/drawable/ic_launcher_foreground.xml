@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The notepad of ic_note, drawn inside the adaptive icon's safe circle (108 units, 66 of them always shown):
+     ic_note's 48-unit drawing, scaled by one and a half and set in the middle. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#F5F0E4" android:pathData="M37.5,31.5h34.5v46.5h-34.5z"/>
+    <path android:strokeColor="#285646" android:strokeWidth="3" android:pathData="M45,31.5v46.5M52.5,45h13.5M52.5,54h13.5M52.5,63h9"/>
+</vector>
